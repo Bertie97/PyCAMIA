@@ -1,10 +1,12 @@
-#! python3.8 -u
-#  -*- coding: utf-8 -*-
 
-##############################
-## Project PyZMyc
-## Package pyoverload
-##############################
+from pycamia import info_manager
+
+__info__=info_manager(
+    project = "PyCAMIA",
+    package = "pyoverload",
+    fileinfo = "Easy types and argument matching for functions."
+)
+
 __all__ = """
     isofsubclass
     inheritable

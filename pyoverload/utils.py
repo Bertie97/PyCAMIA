@@ -1,10 +1,12 @@
-#! python3.8 -u
-#  -*- coding: utf-8 -*-
 
-##############################
-## Project PyZMyc
-## Package pyoverload
-##############################
+from pycamia import info_manager
+
+__info__ = info_manager(
+    project = "PyZMyc",
+    package = "pyoverload",
+    fileinfo = "Useful tools for decorators."
+)
+
 __all__ = """
     raw_function
     return_type_wrapper
@@ -44,28 +46,6 @@ def decorator(wrapper_func):
                 return trans(wrapped_func)
         return decorator(wrapper_func(*args, **kwargs))
     return wraps(wrapper_func)(wrapper)
-
-# def decorator(*wrapper_func, use_raw = True):
-#     if len(wrapper_func) > 2: raise TypeError("Too many arguments for @decorator")
-#     elif len(wrapper_func) == 1: wrapper_func = wrapper_func[0]
-#     else: return decorator(lambda x: decorator(x, use_raw = use_raw), use_raw = use_raw)
-#     if not isinstance(wrapper_func, type(decorator)): raise TypeError("@decorator wrapping a non-wrapper")
-#     def wrapper(*args, **kwargs):
-#         if not kwargs and len(args) == 1:
-#             func = args[0]
-#             raw_func = raw_function(func)
-#             if isinstance(raw_func, type(decorator)):
-#                 func_name = f"{raw_func.__name__}[{wrapper_func.__qualname__.split('.')[0]}]"
-#                 wrapped_func = wraps(raw_func)(wrapper_func(raw_func if use_raw else func))
-#                 wrapped_func.__name__ = func_name
-#                 wrapped_func.__doc__ = raw_func.__doc__
-#                 return wrapped_func
-#                 if 'staticmethod' in str(type(func)): trans = staticmethod
-#                 elif 'classmethod' in str(type(func)): trans = classmethod
-#                 else: trans = lambda x: x
-#                 return trans(wrapped_func)
-#         return decorator(wrapper_func(*args, **kwargs))
-#     return wraps(wrapper_func)(wrapper)
 
 class get_environ_vars(dict):
     """

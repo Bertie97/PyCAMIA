@@ -1,16 +1,16 @@
 #! python3 -u
 #  -*- coding: utf-8 -*-
 
-##############################
-## Project: PyZMyc
-## File: Package packer
-##############################
+from pycamia import info_manager
+__info__ = info_manager(
+    project = "PyZMyc",
+    fileinfo = "File to pack packages in the project.",
+    help = "Use `python pack.py packagename` to pack and upload packages. "
+)
 
 import sys, os, re, pexpect
-from getpass import getpass
-# from pyoverload import *
-# from functools import wraps
-# from types import GeneratorType
+
+from pycamia import touch, Error
 
 key_chain = {"usr": "None", "psw": "None"}
 home_path = os.pardir
@@ -36,31 +36,43 @@ def do_package(name, version=None, pack_type="zipwheel", upload=True):
     if os.path.exists(packing_package_path): os.system(f"rm -r {packing_package_path}")
     os.mkdir(packing_package_path)
     os.system(f"cp -r {os.path.join(home_path, name)} {os.path.join(packing_package_path, name)}")
+    
+    with open(os.path.join(packing_package_path, name, "__init__.py")) as fp: code = fp.read()
+    pivot = "info_manager("
+    s = touch(lambda: code.index(pivot))
+    if s is None: raise Error("Pack")("Please use info_manager in `__init__.py` to identify the basic information. ")
+    info_str = enclosed_object(code, start=s)
+    info = info_manager.parse(info_str)
+    info.version_update()
+    code = code.replace(info_str, str(info))
+    with open(os.path.join(home_path, name, "__init__.py"), 'w') as fp: fp.write(code)
+    with open(os.path.join(packing_package_path, name, "__init__.py"), 'w') as fp: fp.write(code)
 
-    # read the init file and get meta data
-    available_info = {}
-    with open(os.path.join(packing_package_path, name, "__init__.py")) as fp:
-        init_code = fp.read()
-        for info in re.split("###+", init_code)[1].split('\n##'):
-            if ':' in info:
-                k, *v = info.strip().split(':')
-                available_info[k.strip().lower()] = (':'.join(v)).strip()
+    # # read the __init__ file and get meta data
+    # available_info = {}
+    # with open(os.path.join(packing_package_path, name, "__init__.py")) as fp:
+    #     init_code = fp.read()
+        
+    #     for info in re.split("###+", init_code)[1].split('\n##'):
+    #         if ':' in info:
+    #             k, *v = info.strip().split(':')
+    #             available_info[k.strip().lower()] = (':'.join(v)).strip()
 
-    # update the version tag
-    old_version = available_info.get('version', None)
-    if version is None:
-        if old_version is None:
-            version = '1.0.0'
-            init_code = init_code.replace('\n###', '## Version: 1.0.0\n###', 1)
-            print("version 1.0.0 created")
-        else:
-            version = re.sub(r"((\d+\.){2})(\d+)", lambda x: x.group(1)+str(eval(x.group(3))+1), old_version)
-            init_code = init_code.replace(old_version, version, 1)
-            print(f"version: {old_version} => {version}")
+    # # update the version tag
+    # old_version = available_info.get('version', None)
+    # if version is None:
+    #     if old_version is None:
+    #         version = '1.0.0'
+    #         init_code = init_code.replace('\n###', '## Version: 1.0.0\n###', 1)
+    #         print("version 1.0.0 created")
+    #     else:
+    #         version = re.sub(r"((\d+\.){2})(\d+)", lambda x: x.group(1)+str(eval(x.group(3))+1), old_version)
+    #         init_code = init_code.replace(old_version, version, 1)
+    #         print(f"version: {old_version} => {version}")
 
-    # write version information back to the init file
-    with open(os.path.join(home_path, name, "__init__.py"), 'w') as fp:
-        fp.write(init_code)
+    # # write version information back to the __init__ file
+    # with open(os.path.join(home_path, name, "__init__.py"), 'w') as fp:
+    #     fp.write(init_code)
 
     # create the setup.py file
     setup_file_path = os.path.join(packing_package_path, "setup.py")

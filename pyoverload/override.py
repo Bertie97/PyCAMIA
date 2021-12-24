@@ -1,10 +1,12 @@
-#! python3.8 -u
-#  -*- coding: utf-8 -*-
 
-##############################
-## Project PyZMyc
-## Package pyoverload
-##############################
+from pycamia import info_manager
+
+__info__ = info_manager(
+    project = "PyCAMIA",
+    package = "pyoverload",
+    fileinfo = "Refrom the functions to perform override."
+)
+
 __all__ = """
     override
     overload

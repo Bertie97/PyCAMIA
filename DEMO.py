@@ -1,10 +1,11 @@
-
+## This is the DEMO file for project PyCAMIA.
+## Change the arguments of `Workflow` for variable `demo` to test different packages. 
 if __name__ != "__main__": exit()
-package_to_run = """
-pyoverload
-""".split()
+from pycamia import Workflow
+demo = Workflow("pycamia")
 
-if "pyoverload" in package_to_run:
+with demo("pyoverload"), demo.jump:
+
     from pyoverload import *
     print(isoftype({'a': 2, '3': 43}, Dict[str:int]))
     print(isoftype({'a': 2, '3': 43.}, Dict[str:int]))
@@ -89,4 +90,35 @@ if "pyoverload" in package_to_run:
 
     print(rat(126/270) + rat(25, 14))
     print(rat(126, 270) * rat(25, 14))
+
+with demo("pycamia"), demo.jump:
+    from pycamia import enclosed_object, info_manager
+    code = """
+from .manager import info_manager
+
+__info__ = info_manager(
+    project = "PyCAMIA",
+    package = "<main>",
+    author = "Yuncheng Zhou",
+    create = "2021-12",
+    version = "1.0.0",
+    contact = "bertiezhou@163.com",
+    keywords = ["environment", "path", "touch"],
+    description = "The main package and a background support of project PyCAMIA. ",
+    requires = ["torch>1.5"]
+).check()
+
+from .environment import get_environ_vars
+from .exception import *
+from .functions import *
+    """
+    pivot = "info_manager("
+    info_str = enclosed_object(code, by="()", start=code.index(pivot))
+    info = info_manager.parse(info_str).check()
+    info.x = "hello"
+    print(info)
     
+    from pycamia import flatlist
+    print(flatlist([0, 2, [1, 4, 2], [1, 3, 4]]))
+    
+with demo(""), demo.jump: pass

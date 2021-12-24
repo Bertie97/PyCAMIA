@@ -2,7 +2,7 @@
 
 ## Introduction
 
-[`pyoverload`](https://github.com/Bertie97/pyctlib/tree/main/pyoverload) is a package affiliated to project [`PyZMyc`](https://github.com/Bertie97/pyzmyc). It is a powerful overloading tools to provide easy overload for `python v3.6+`. `pyoverload` provide multiple usages. The simplest one, however, can be easily implemented as follows. 
+[`pyoverload`](https://github.com/Bertie97/pycamia/tree/main/pyoverload) is a package affiliated to project [`PyCAMIA`](https://github.com/Bertie97/pycamia). It is a powerful overloading tools to provide easy overload for `python v3.6+`. `pyoverload` provide multiple usages. The simplest one, however, can be easily implemented as follows. 
 
 ```python
 >>> from pyoverload import overload
@@ -20,7 +20,7 @@ func1 1
 func2 1
 ```
 
-Demo is available at https://github.com/Bertie97/pyzmyc/raw/main/pyoverload/Jedi.jpg. `pyoverload` has all of following appealing features:
+`pyoverload` has all of following appealing features:
 
 1. Support of **`Jedi` auto-completion** by keyword decorator `@overload`. This means all main-stream python IDE can hint you the overloaded functions you have defined. 
 2. **Multiple usages** that are user friendly for all kinds of users, including `C/Java` language system users and those who are used to `singledispatch` based overload. Also, easy collector of ordinary python functions is also provided. 
@@ -32,7 +32,7 @@ Demo is available at https://github.com/Bertie97/pyzmyc/raw/main/pyoverload/Jedi
 
 ## Installation
 
-This package can be installed by `pip install pyoverload` or moving the source code to the directory of python libraries (the source code can be downloaded on [github](https://github.com/Bertie97/pyzmyc) or [PyPI](https://pypi.org/project/pyoverload/)). 
+This package can be installed by `pip install pyoverload` or moving the source code to the directory of python libraries (the source code can be downloaded on [github](https://github.com/Bertie97/pycamia) or [PyPI](https://pypi.org/project/pyoverload/)). 
 
 ```shell
 pip install pyoverload
@@ -87,7 +87,7 @@ func1 1.0
 
 Note that the auto-completion by `Jedi` can only work for this usage. 
 
-<img src="https://github.com/Bertie97/pyzmyc/raw/main/pyoverload/Jedi.jpg" alt="Jedi" style="zoom:50%;" />
+<img src="https://github.com/Bertie97/pycamia/raw/main/pyoverload/Jedi.jpg" alt="Jedi" style="zoom:50%;" />
 
 ### Usage 2: Registering Fashion
 
@@ -251,7 +251,7 @@ For a `Type`, `List` for example, we can do the following operations. Except the
 
 10. `len(List[10, 20])`: Function `len` returns the length of the array. `200` should be the result for the given example. 
 
-## Limitations
+## Suggestions
 
 1. The speed of type check for `pyoverload.typehint.Type` is not very fast, hence please try your best to use builtin types, types from module `types` or list of types to do the typehint. 
 2. The `overload` takes extra time for delivering the arguments, hence using it for functions require fast speed is not recommended. 
@@ -260,4 +260,3 @@ For a `Type`, `List` for example, we can do the following operations. Except the
 ## Acknowledgment
 
 @Yuncheng Zhou: Developer
-@Yiteng Zhang: Tests and Maintenance
