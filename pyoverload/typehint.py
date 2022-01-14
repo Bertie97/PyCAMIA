@@ -48,7 +48,7 @@ __all__ = """
 """.split()
 
 import re, sys
-from .utils import decorator, get_environ_vars, raw_function, _get_wrapped
+from .utils import decorator, get_environ_locals, raw_function, _get_wrapped, _rawname
 
 try:
     import inspect
@@ -56,9 +56,6 @@ try:
 except ImportError: have_inspect = False
 
 class TypeHintError(Exception): pass
-
-_mid = lambda x: x[1] if len(x) > 1 else x[0]
-_rawname = lambda s: _mid(str(s).split("'")).split('.')[-1]
 
 def equals(x, y):
     return (isinstance(x, type(y)) or isinstance(y, type(x))) and x == y
@@ -125,9 +122,9 @@ def isitertype(x):
         False
     """
     if isinstance(x, str):
-        local_vars = get_environ_vars()
+        local_vars = get_environ_locals()
         local_vars.update(locals())
-        locals().update(local_vars.simplify())
+        locals().update(local_vars)
         try: x = eval(x)
         except: return False
     if isinstance(x, Type):
@@ -277,9 +274,9 @@ def isoftype(x, xtype):
         False
     """
     if isinstance(xtype, str):
-        local_vars = get_environ_vars()
+        local_vars = get_environ_locals()
         local_vars.update(locals())
-        locals().update(local_vars.simplify())
+        locals().update(local_vars)
         try: xtype = eval(xtype)
         except: return xtype in [_rawname(t) for t in type(x).__mro__]
     if xtype == type: return isatype(x)

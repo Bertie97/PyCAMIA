@@ -25,15 +25,15 @@ pip install pycamia
 ## Package `environment`
 
 This package fetches the surrounding environment of the call. It is likely that no more functions would be added to it. If there's any suggestion, please contact the developer. 
-1. Use `v = get_environ_vars()` to get a dictionary like object of local variables. It will automatically find the module that ask for a environment search and fetch the local variables. No error has been found yet. If the result is out of expectations, please contact the developer. 
+1. Use `v = get_environ_locals()` or `v = get_environ_globals()` to get the dictionary of local or global variables in the parent environment. If the result is out of expectations, please contact the developer. 
 2. Use `v['name']` to read variable `name` and `v['name'] = value` to add variable to the environment. 
 
 ## Package `strop`
 
 This package cope with str objects. 
-1. Use `strlen` to find the ASCII length for a string, with a length `2` for wide characters.
-2. Use `strslice` to slice a string by given indices.
-3. Use `findall` to obtain all the indices of a given string. `strslice(s, findall(s, k))` is equivalent to `s.split(k)`. 
+1. Use `str_len` to find the ASCII length for a string, with a length `2` for wide characters.
+2. Use `str_slice` to slice a string by given indices.
+3. Use `find_all` to obtain all the indices of a given string. `str_slice(s, find_all(s, k))` is equivalent to `s.split(k)`. 
 4. Use `sorted_dict_repr` to create a repr string for a dictionary with ordered key.
 5. Use `enclosed_object` to find the first object enclosed by brackets. 
 6. Use `tokenize` to split a string without breaking enclosed objects. This is useful in breaking text of dictionary structures or arguments. e.g. one can use `tokenize(args, sep=[',', '='])[::2]` to find the argument names if `args` is a string in the format `key1=value1, key2 = value2, ...`.
@@ -43,7 +43,9 @@ This package cope with str objects.
 This package cope with list objects. More useful functions will be added to it in the future. 
 1. Use `argmin(list, domain)` to find the indices for the minimal value in list. The function only search in the indices `domain`. A list is output as there may be multiple entries. 
 2. Use `argmax` to find the indices for the maximal value, similar to `argmin`. 
-3. Use `flatlist` to unwrap the list elements to create a list with no element in type `list`. 
+3. Use `flat_list` to unwrap the list elements to create a list with no element in type `list`. 
+4. Use `prod` to obtain the product of all numbers in the list. 
+5. Use `item` to fetch the only element in the list. An error will be raised if there isn't any or are more than 1 elements. 
 
 ## Package `manager`
 
@@ -64,7 +66,7 @@ This package contains simple functions. It is the simplest package in the projec
 This package handles exceptions. 
 1. Use `touch(function)` to try a function and suppress the error in the mean time. e.g. `touch(lambda: 1/a)` returns `None` to tell you that an exception occurs when `a=0`, but returns `1` when `a=1`. 
 2. Use `crashed(function)` to check whether a function fails or not. 
-3. Use `assertion(bool_to_be_tested, assertion_text)` to assert the given expression and output your designed assertion_text when the test fails. 
+3. Use `avouch(bool_to_be_tested, assertion_text)` to avouch that the given expression is true and output your designed `assertion_text` when the test fails. 
 4. Use `Error("name")` to creat a new error type. It is the same as creating an Error tag by `class nameError(Exception): pass`.
 
 ## Package `inout`
@@ -77,11 +79,11 @@ This package manipulates the input/output. Currently, it only deal with print. S
 ## Package `timing`
 
 This package use the time spent of commands to perform useful inspection or organization of the codes.
-1. Use `@timethis` to time a function.
-2. Use `with timer("name"):` to time a series of commands.
-3. Use `with scope("name"):` to nest a series of commands. It is an alias of `timer`. 
+1. Use `@time_this` to time a function.
+2. Use `with Timer("name"):` to time a series of commands.
+3. Use `with scope("name"):` to nest a series of commands. It is an alias of `Timer`. 
 4. Use `with scope("name"), jump:` to jump a series of commands. 
-5. Use `with scope("name"), JUMP(False):` to disable the jump.
+5. Use `with scope("name"), Jump(False):` to disable the jump.
 6. Use `wf = Workflow("step1", "step2")` and `with wf("step1(2)"), wf.jump:` before commands of "step1(2)" to create a workflow. One can change the arguments in the init function to decide which steps to run. 
 7. Use `@periodic(seconds, max_repeat)` to run a function repeatedly. 
 

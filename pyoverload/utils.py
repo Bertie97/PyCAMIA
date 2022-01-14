@@ -16,9 +16,6 @@ __all__ = """
 import sys
 from functools import wraps
 
-_mid = lambda x: x[1] if len(x) > 1 else x[0]
-_rawname = lambda s: _mid(str(s).split("'"))
-
 def raw_function(func):
     if hasattr(func, "__func__"):
         return func.__func__
@@ -47,77 +44,29 @@ def decorator(wrapper_func):
         return decorator(wrapper_func(*args, **kwargs))
     return wraps(wrapper_func)(wrapper)
 
-class get_environ_vars(dict):
-    """
-    get_environ_vars(pivot) -> dict
+def _mid(x): return x[1] if len(x) > 1 else x[0]
+def _rawname(s): return _mid(str(s).split("'"))
 
-    Returns a list of dictionaries containing the environment variables, 
-        i.e. the variables defined in the most reasonable user environments. 
-    
-    Note:
-        It search for the environment where the pivot is defined. 
-        Please do not use it abusively as it is currently provided for private use in project PyCTLib only. 
+stack_error = lambda x: TypeError(f"Unexpected function stack for {x}, please contact the developer for further information. ")
 
-    Example::
-        In file `main.py`:
-            from mod import function
-            def pivot(): ...
-            function(pivot)
-        In file `mod.py`:
-            from pyoverload.utils import get_environ_vars
-            def function(f): return get_environ_vars(f)
-        Output:
-            {
-                'function': <function 'function'>,
-                'pivot': <function 'pivot'>,
-                '__name__': "__main__",
-                ...
-            }
-    """
-
-    def __new__(cls):
-        self = super().__new__(cls)
-        frame = sys._getframe()
-        self.all_vars = []
-        # filename = raw_function(_get_wrapped(pivot)).__globals__.get('__file__', '')
-        prev_frame = frame
-        prev_frame_file = _rawname(frame)
-        while frame.f_back is not None:
+def _get_frames():
+    frames = []
+    frame = sys._getframe()
+    fname = frame.f_back.f_code.co_name
+    while frame is not None:
+        frame_file = _rawname(frame)
+        if frame_file.startswith('<') and frame_file.endswith('>') and frame_file != '<stdin>':
             frame = frame.f_back
-            frame_file = _rawname(frame)
-            if frame_file.startswith('<') and frame_file.endswith('>') and frame_file != '<stdin>': continue
-            if '<module>' not in str(frame):
-                if frame_file != prev_frame_file:
-                    prev_frame = frame
-                    prev_frame_file = frame_file
-                continue
-            if frame_file != prev_frame_file: self.all_vars.extend([frame.f_locals])
-            else: self.all_vars.extend([prev_frame.f_locals])
-            break
-        else: raise TypeError("Unexpected function stack, please contact the developer for further information. ")
-        return self
+            continue
+        frames.append(frame)
+        if len(frames) >= 4: return frames[2:]
+        frame = frame.f_back
+    raise stack_error(fname)
 
-    def __init__(self): pass
-    
-    def __getitem__(self, k):
-        for varset in self.all_vars:
-            if k in varset: return varset[k]; break
-        else: raise IndexError(f"No '{k}' found in the environment. ")
+def get_environ_locals():
+    _, client_frame = _get_frames()
+    return client_frame.f_locals
 
-    def __setitem__(self, k, v):
-        for varset in self.all_vars:
-            if k in varset: varset[k] = v; break
-        else: self.all_vars[0][k] = v
-
-    def __contains__(self, x):
-        for varset in self.all_vars:
-            if x in varset: break
-        else: return False
-        return True
-
-    def update(self, x): self.all_vars.insert(0, x)
-
-    def simplify(self):
-        collector = {}
-        for varset in self.all_vars[::-1]: collector.update(varset)
-        return collector
+def get_environ_globals():
+    _, client_frame = _get_frames()
+    return client_frame.f_globals

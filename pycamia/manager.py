@@ -14,8 +14,8 @@ __all__ = """
 
 import os, re
 
-from .environment import get_environ_vars
-from .strop import enclosed_object, tokenize
+from .environment import get_environ_globals
+from .strop import tokenize
 
 class info_manager:
     """
@@ -54,7 +54,7 @@ class info_manager:
         properties.update(dict(project=project, package=package, requires=requires))
         self.properties = properties
         self.__dict__.update(properties)
-        file_path = get_environ_vars()['__file__']
+        file_path = get_environ_globals()['__file__']
         file = os.path.extsep.join(os.path.basename(file_path).split(os.path.extsep)[:-1])
         self.name = '.'.join([x for x in [project, package, file] if x and x != "__init__"])
         self.tab = ' ' * 4
@@ -71,7 +71,7 @@ class info_manager:
                 package = __import__(rname)
                 if rversion is not None:
                     op = r.replace(rname, '').replace(rversion, '').strip()
-                    if not eval(repr(package.__version__) + op + repr(rversion)):
+                    if not eval(repr(tuple(float(x) for x in package.__version__.split('.'))) + op + repr(tuple(float(x) for x in rversion.split('.')))):
                         not_found_packages.append(r)
             except ModuleNotFoundError: not_found_packages.append(rname)
         if len(not_found_packages) > 0:
@@ -107,3 +107,7 @@ class info_manager:
     def __setattr__(self, name, value):
         if hasattr(self, 'order') and name not in self.order: self.order.append(name)
         super().__setattr__(name, value)
+    
+    def get(self, name, value):
+        if hasattr(self, name): return self[name]
+        return value

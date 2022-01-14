@@ -5,11 +5,13 @@ __info__ = dict(
     author = "Yuncheng Zhou",
     create = "2021-12",
     fileinfo = "File to manage the environment.",
-    help = "Use `get_environ_vars` to obtain the `locals()` outside the function. "
+    help = "Use `get_**` to obtain the the variables etc. outside the function. "
 )
 
 __all__ = """
-    get_environ_vars
+    get_environ_locals
+    get_environ_globals
+    get_args_expression
 """.split()
 
 import sys
@@ -17,84 +19,35 @@ import sys
 def _mid(x): return x[1] if len(x) > 1 else x[0]
 def _rawname(s): return _mid(str(s).split("'"))
 
-class get_environ_vars(dict):
-    """
-    get_environ_vars() -> 'dict'(a type extended from dict)
+stack_error = lambda x: TypeError(f"Unexpected function stack for {x}, please contact the developer for further information. ")
 
-    Returns the environment variables in the frame out of the package.
-        i.e. the variables defined in the most reasonable user environments.
-
-    Note:
-        Please do not use it abusively as it is currently provided for 
-        private use in project PyCAMIA only. Using it outside may cause error.
-
-    Example:
-    ----------
-    In file `main.py`:
-        from mod import function
-        x = 1
-        function()
-    In file `mod.py`:
-        from pyoverload.utils import get_environ_vars
-        def function(): return get_environ_vars()
-    Output:
-        {
-            'function': < function 'function' >,
-            'x': 1,
-            '__name__': "__main__",
-            ...
-        }
-    """
-
-    def __new__(cls):
-        self = super().__new__(cls)
-        frame = sys._getframe()
-        self.all_vars = []
-        prev_frame = frame
-        prev_frame_file = _rawname(frame)
-        while frame.f_back is not None:
+def _get_frames():
+    frames = []
+    frame = sys._getframe()
+    fname = frame.f_back.f_code.co_name
+    while frame is not None:
+        frame_file = _rawname(frame)
+        if frame_file.startswith('<') and frame_file.endswith('>') and frame_file != '<stdin>':
             frame = frame.f_back
-            frame_file = _rawname(frame)
-            if frame_file.startswith('<') and frame_file.endswith('>') and frame_file != '<stdin>': continue
-            if '<module>' not in str(frame):
-                if frame_file != prev_frame_file:
-                    prev_frame = frame
-                    prev_frame_file = frame_file
-                continue
-            if frame_file != prev_frame_file: self.all_vars.extend([frame.f_locals])
-            else: self.all_vars.extend([prev_frame.f_locals])
-            break
-        else: raise TypeError("Unexpected function stack, please contact the developer for further information. ")
-        return self
+            continue
+        frames.append(frame)
+        if len(frames) >= 4: return frames[2:]
+        frame = frame.f_back
+    raise stack_error(fname)
 
-    def __init__(self): pass
+def get_environ_locals():
+    _, client_frame = _get_frames()
+    return client_frame.f_locals
 
-    def __getitem__(self, k):
-        for varset in self.all_vars:
-            if k in varset:
-                return varset[k]
-                break
-        else: raise IndexError(f"No '{k}' found in the environment. ")
-
-    def __setitem__(self, k, v):
-        for varset in self.all_vars:
-            if k in varset:
-                varset[k] = v
-                break
-        else: self.all_vars[0][k] = v
-
-    def __contains__(self, x):
-        for varset in self.all_vars:
-            if x in varset: break
-        else: return False
-        return True
+def get_environ_globals():
+    _, client_frame = _get_frames()
+    return client_frame.f_globals
     
-    def __str__(self):
-        return str(self.simplify())
-
-    def update(self, x): self.all_vars[0].update(x)
-
-    def simplify(self):
-        collector = {}
-        for varset in self.all_vars[::-1]: collector.update(varset)
-        return collector
+def get_args_expression():
+    module_frame, client_frame = _get_frames()
+    func_name = module_frame.f_code.co_name
+    with open(client_frame.f_code.co_filename) as fp:
+        for _ in range(client_frame.f_lineno-1): fp.readline()
+        l = fp.readline()
+        if func_name not in l: raise stack_error
+        return l.split(func_name)[-1].split(';')[0].strip().strip('()')

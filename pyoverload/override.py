@@ -15,11 +15,8 @@ __all__ = """
 
 from functools import wraps
 from .typehint import *
-from .typehint import __all__ as typehint_all
 from .typehint import TypeHintError, _getDeclaration
-from .utils import get_environ_vars, _get_wrapped, raw_function, decorator
-
-__all__ += typehint_all
+from .utils import get_environ_globals, _get_wrapped, raw_function, decorator
 
 _debug = False
 
@@ -58,7 +55,7 @@ def _get_func_name(f, change_name = True):
 
 @decorator
 def overload(func):
-    local_vars = get_environ_vars()
+    local_vars = get_environ_globals()
     fname = raw_function(func).__name__.split('[')[0]
     rawfname = _get_func_name(func, change_name = False)
     key = f"__overload_{rawfname}__"

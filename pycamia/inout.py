@@ -16,6 +16,8 @@ __all__ = """
     SPrint
 """.split()
 
+import sys
+
 class _strIO:
     def __init__(self): self._str_ = ''
     def write(self, s): self._str_ += s
@@ -84,6 +86,14 @@ class SPrint:
     def __str__(self): return self.text
 
     def clear(self): self.text = ""
+    
+    def save(self, file_path):
+        with open(file_path, 'w') as fp:
+            fp.write(self.text)
+            
+    def append_to(self, file_path):
+        with open(file_path, 'a') as fp:
+            fp.write(self.text)
 
 str_print = SPrint()
 """

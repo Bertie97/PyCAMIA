@@ -10,11 +10,11 @@ __info__ = info_manager(
 )
 
 __all__ = """
-    timethis
-    timer
+    time_this
+    Timer
+    Jump
     scope
     jump
-    JUMP
     Workflow
     periodic
 """.split()
@@ -24,7 +24,7 @@ with __info__:
     from functools import wraps
     from threading import Timer
 
-def timethis(func):
+def time_this(func):
     """
     A function wrapper of function `func` that outputs the time used to run it. 
 
@@ -50,13 +50,13 @@ def timethis(func):
         return result
     return wrapper
 
-class timer(object):
+class Timer(object):
     """
     An environment that outputs the time used to run codes within. 
 
     Example:
     ----------
-    >>> with timer("test"):
+    >>> with Timer("test"):
     ...     # inside codes
     ... 
     # some outputs
@@ -83,9 +83,9 @@ class timer(object):
             print("[%s%s takes %lfs]"%
                   (self.name, '' if self.nround == 0 else "(all)", time.time() - self.start))
 
-class JUMP(object):
+class Jump(object):
     """
-    Creates a JUMP RuntimeError, designed for instance `jump`. 
+    Creates a Jump RuntimeError, designed for instance `jump`. 
     """
     def __init__(self, jump=None): self.jump = True if jump is None else jump
     def __enter__(self):
@@ -93,15 +93,15 @@ class JUMP(object):
         if self.jump: dojump()
         else: return dojump
     def __exit__(self, *args): pass
-    def __call__(self, condition): return JUMP(condition)
+    def __call__(self, condition): return Jump(condition)
     
 def scope(name, timing=True):
     """
     An allias of timer to better organize the codes. 
     
     Inputs:
-        name[str]: the name of the scope, used to display. 
-        timing[bool]: whether to show the time span or not. 
+        name (str): the name of the scope, used to display. 
+        timing (bool): whether to show the time span or not. 
 
     Example:
     ----------
@@ -111,11 +111,11 @@ def scope(name, timing=True):
     # some outputs
     [scope test takes 0.001s]
     """
-    return timer("scope " + name, timing)
+    return Timer("scope " + name, timing)
 
-jump = JUMP()
+jump = Jump()
 """
-The jumper, one can use it along with `scope`(or `timer`) to jump a chunk of codes. 
+The jumper, one can use it along with `scope`(or `Timer`) to jump a chunk of codes. 
 
 Example:
 ----------
@@ -123,6 +123,12 @@ Example:
 ...     # inside codes
 ... 
 # nothing, the inside codes do not run
+>>> with scope("test"), jump as stop:
+...     print('a')
+...     stop()
+...     print('b')
+... 
+a
 """
 
 class Workflow:
@@ -130,10 +136,10 @@ class Workflow:
     A structure to create a series of workflow. 
     
     Note:
-        Remember to manually add `, *.jump` after with so that 
+        Remember to manually add `, {workflow_name}.jump` after `with` so that 
         we can control it. See the example. 
     
-    Arrguments:
+    Args:
         *args: the list of scope names to run. 
 
     Example:
@@ -153,13 +159,13 @@ class Workflow:
     4[visualization takes 0.000006s]
     """
     def __init__(self, *args): self.workflow = args
-    def __call__(self, key): self.key=key; return timer(key)
+    def __call__(self, key): self.key=key; return Timer(key)
     def __getattr__(self, k): return self(k)
     def __getitem__(self, k): return self(k)
     @property
-    def j(self): return JUMP(self.key not in self.workflow)
+    def j(self): return Jump(self.key not in self.workflow)
     @property
-    def jump(self): return JUMP(self.key not in self.workflow)
+    def jump(self): return Jump(self.key not in self.workflow)
 
 class TimerCtrl(Timer):
     """
@@ -191,8 +197,8 @@ def periodic(period, maxiter=float('Inf')):
     """
     A function wrapper to repeatedly run the wrapped function `period`.
     
-    Arrguments:
-        maxiter[int]: the number of iterations. 
+    Args:
+        maxiter (int): the number of iterations. 
 
     Example:
     ----------

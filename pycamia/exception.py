@@ -7,25 +7,30 @@ __info__ = info_manager(
     author = "Yuncheng Zhou",
     create = "2021-12",
     fileinfo = "File to handle the exceptions.",
-    help = "`touch` to try, check to validate `get_environ_vars` to obtain the `locals()` outside the function. "
+    help = "Handle the exceptions. `touch` swallow the error, `crashed` to see if there is an erro, `avouch` to assert with text, `Error` to create new error types. "
 )
 
 __all__ = """
     touch
     crashed
-    assertion
+    avouch
     Error
 """.split()
 
-from time import sleep
+import re, sys
 from typing import Callable, Union
 
-from .environment import get_environ_vars
+from .environment import get_args_expression, get_environ_locals, get_environ_globals
+from .functions import const_function
 
 def touch(v: Union[Callable, str], default=None):
     """
     Touch a function or an expression `v`, see if it causes exception. 
     If not, output the result, otherwise, output `default`. 
+    
+    Note:
+        Use `default = pycamia.functions.identity_function` (or write one yourself)
+        to return the exception object.
     
     Example:
     ----------
@@ -33,15 +38,32 @@ def touch(v: Union[Callable, str], default=None):
     >>> touch(lambda: 1/a, default = 'fail')
     fail
     """
+    if not callable(default):
+        default = const_function(default)
     if isinstance(v, str):
-        local_vars = get_environ_vars()
+        local_vars = get_environ_locals()
         local_vars.update(locals())
-        locals().update(local_vars.simplify())
+        locals().update(local_vars)
         try: return eval(v)
-        except: return default
+        except Exception as e: return default(e)
     else:
         try: return v()
-        except: return default
+        except Exception as e: return default(e)
+
+def avouch(v: bool, txt=""):
+    """
+    Assert with text. 
+    
+    Inputs:
+        v[bool]: the expression to be validated.
+        txt[str]: the assertion message when the test fails.
+    """
+    if not v:
+        if not txt:
+            expr = get_args_expression().split(',')[0].strip()
+            if (expr is not None):
+                txt = f"Failure in assertion '{expr}'"
+        raise AssertionError(txt)
 
 def crashed(func):
     """
@@ -52,17 +74,6 @@ def crashed(func):
     except:
         return True
     return False
-
-def assertion(v: bool, txt=""):
-    """
-    Assert with text. 
-    
-    Inputs:
-        v[bool]: the expression to be validated.
-        txt[str]: the assertion message when the test fails.
-    """
-    if not v:
-        raise AssertionError(txt)
 
 def Error(name: str):
     """
@@ -80,8 +91,7 @@ def Error(name: str):
     ... 
     caught
     """
-    v = get_environ_vars()
-    print(v)
+    v = get_environ_globals()
     error_name = f"{name}Error"
     if error_name in v: return v[error_name]
     exec(f"class {error_name}(Exception): pass")

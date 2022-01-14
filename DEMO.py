@@ -108,7 +108,7 @@ __info__ = info_manager(
     requires = ["torch>1.5"]
 ).check()
 
-from .environment import get_environ_vars
+from .environment import *
 from .exception import *
 from .functions import *
     """
@@ -118,7 +118,11 @@ from .functions import *
     info.x = "hello"
     print(info)
     
-    from pycamia import flatlist
-    print(flatlist([0, 2, [1, 4, 2], [1, 3, 4]]))
+    from pycamia import flat_list
+    print(flat_list([0, 2, [1, 4, 2], [1, 3, 4]]))
+    
+    from pycamia import touch
+    a = 1
+    print(touch("a"))
     
 with demo(""), demo.jump: pass

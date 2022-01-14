@@ -8,35 +8,35 @@ __info__ = dict(
 )
 
 __all__ = """
-    strlen
-    strslice
-    findall
+    str_len
+    str_slice
+    find_all
     sorted_dict_repr
     enclosed_object
     tokenize
 """.split()
 
-def strlen(str_:str, r:[int, float]=2):
+def str_len(str_:str, r:int=2):
     """
     Returen the ASCII string length of `str_`. 
     
-    Arguments:
+    Args:
         r: bytes a wide character stands for. 
     
     Example:
     ----------
-    >>> print(strlen("12"), len("你好"), strlen("你好"))
+    >>> print(str_len("12"), len("你好"), str_len("你好"))
     2 2 4
     """
     return int(len(str_) + (r-1) * len([c for c in str_ if ord(u'\u4e00') <= ord(c) <= ord(u'\u9fa5')]))
 
-def findall(str_:str, key:str):
+def find_all(str_:str, key:str):
     """
     Returen all the starting indices of string `key` in string `str_`. 
     
     Example:
     ----------
-    >>> findall("abcaa", 'a')
+    >>> find_all("abcaa", 'a')
     [0, 3, 4]
     """
     p, indices = -1, []
@@ -46,19 +46,19 @@ def findall(str_:str, key:str):
         indices.append(p)
     return indices
 
-def strslice(str_:str, indices:list):
+def str_slice(str_:str, indices:list):
     """
     Split the string `str_` by breaks in list `indices`.
     
     Example:
     ----------
-    >>> slice("abcaa", [2,4])
+    >>> str_slice("abcaa", [2,4])
     ["ab", "ca", "a"]
     """
     indices.insert(0, 0); indices.append(len(str_))
     return [str_[indices[i]:indices[i+1]] for i in range(len(indices) - 1)]
 
-def sorted_dict_repr(d:dict, order:[list, tuple]):
+def sorted_dict_repr(d:dict, order:list):
     """
     Representer of dictionary `d`, with key order `order`.
     
@@ -105,7 +105,7 @@ def enclosed_object(str_, by=["([{", ")]}", "$`'\""], start=0):
             else: depth[s] += 1; depth['all'] += 1
     raise RuntimeError(f"Cannot find enclosed object from string {repr(str_)}.")
 
-def tokenize(str_:str, sep=[' ', '\n'], by=["([{", ")]}", "$`'\""], start=0, strip='', keep_empty=True) -> list:
+def tokenize(str_:str, sep=[' ', '\n'], by=["([{", ")]}", "$`'\""], start=0, strip='', keep_empty=True):
     """
     Split the string `str_` by elements in `sep`, but keep enclosed objects not split.
     
@@ -158,19 +158,3 @@ def tokenize(str_:str, sep=[' ', '\n'], by=["([{", ")]}", "$`'\""], start=0, str
     if keep_empty or t != '': 
         tokens.append(t)
     return tokens
-    # if isinstance(keys, str): keys = [keys]
-    # tokensin, tokensout = "([{<$\"|`'", "'`|\"$>}])"
-    # d = {'()':0, '[]':0, '{}':0, '<>':0, '$$':0, '""':0, '||':0, '``':0, "''":0}
-    # pair = {x:y for x, y in flatlist([[(c, x) for c in x] for x in d.keys()])}
-    # depth = [0] * len(str_)
-    # for i in range(len(str_)):
-    #     if i > 0 and str_[i] == '\\': depth[i] = sum(d.values()); continue
-    #     if str_[i] in tokensout and d[pair[str_[i]]] > 0: d[pair[str_[i]]] -= 1
-    #     elif str_[i] in tokensin: d[pair[str_[i]]] += 1
-    #     depth[i] = sum(d.values())
-    # strs = [str_]
-    # for key in keys:
-    #     strs = flatlist([[sl[len(key):] if sl.startswith(key) else sl for sl in
-    #                       slice(s, argmin(findall(s, key), depth))] for s in strs])
-    # if len(keys) > 1: return [s for s in strs if s]
-    # return strs
