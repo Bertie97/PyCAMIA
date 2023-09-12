@@ -9,625 +9,836 @@ __info__ = info_manager(
     fileinfo = "File of reading & writing medical files. ",
     help = "Use `NII` and `DCM` to cope with files.",
     requires = ["nibabel", "pydicom"]
-).check()
+)
 
 __all__ = """
-    NII
-    DCM
+    IMG
+    dcm2nii
+    nii2dcm
 """.split()
 
+import os
+from datetime import datetime as dt
+
 with __info__:
-    import torch
+    import SimpleITK as sitk
     import batorch as bt
-    import nibabel as nib
-    import pydicom as dcm
     import numpy as np
-    from pycamia import path, shell
+    from pycamia import Path, Workflow, SPrint, Error
+    from pycamia import no_print, touch, avouch, alias, get_environ_vars
+    from pycamia import to_tuple, to_list, get_alphas, get_digits, arg_tuple
+    from pycamia import item, argmax, sublist, map_ele
+    from pycamia.numpyop import toI
+    from pyoverload import overload, callable
 
-def toU(dt):
-    if np.dtype(dt).kind == np.dtype(np.int).kind: return np.dtype('uint%d'%(8*dt.itemsize))
-    else: return dt
+available_modalities = ['PNG'] # TODO: MHA
+sitk_supported_modalities = ['NII', 'NRRD']
+sitk_default_exts = {'NII': '.nii.gz', 'NRRD': '.nrrd'}
+sitk_modality_exts = {'.nii': 'NII', '.nii.gz': 'NII', '.nrrd': 'NRRD'}
+available_modalities.extend(sitk_supported_modalities)
+
+try: import nibabel as nib; import nrrd # pip install pynrrd
+except ModuleNotFoundError: pass
+try: import pydicom as dcm; available_modalities.append('DCM')
+except [ImportError, ModuleNotFoundError]: pass
+
+run = Workflow(*available_modalities, verbose=False)
+cdate = lambda: dt.now().strftime("%Y%m%d")
+ctime = lambda: dt.now().strftime("%H%M%S")
+cmilitime = lambda: dt.now().strftime("%H%M%S.%f")[:-3]
+cstamp = lambda: dt.now().strftime("%Y%m%d%H%M%S")
+cmilistamp = lambda: dt.now().strftime("%Y%m%d%H%M%S%f")[:-2]
+get_uid7 = lambda: "1.2.100.100000.100000.111." + cstamp()
+get_uid10 = lambda: "1.3.10.100000.11.10000.1.0.1000." + cmilistamp()
+
+basic_tags = {
+    "0010|0010": "Unknown", # Patient Name
+    "0010|0020": "00000001", # Patient ID
+    "0010|0030": "20000101", # Patient Birth Date
+    "0010|0040": 'M', # Patient Sex
+    "0010|1010": "020Y", # Patient Age
+    "0010|1020": "100", # Patient Height
+    "0010|1030": "200", # Patient Weight
+    "0008|0020": cdate(), # Study Date
+    "0008|0030": ctime(), # Study Time
+    "0008|0050": cdate() + "00010001", # Accession Number
+    "0008|0060": "Unknown",  # Modality
+    "0020|000D": get_uid7(), # Study Instance UID, for machine consumption
+    "0020|0010": "111111111", # Study ID, for human consumption
+    "0020|0052": get_uid10(), # Frame of Reference UID
+    # "0028|1050": '197.64', # Window Center
+    # "0028|1051": '375.23', # Window Width
+}
+
+with run("DCM", "NII"), run.all_tags:
+    def dcm2nii(file1, file2):
+        IMG(file1).astype(IMG.nii).save(file2)
+
+    def nii2dcm(file1, file2):
+        IMG(file1).astype(IMG.dcm).save(file2)
+        
+class Spacing(tuple): ...
+
+class IMG:
     
-def toI(dt):
-    if np.dtype(dt).kind == np.dtype(np.uint).kind: return np.dtype('int%d'%(8*dt.itemsize))
-    else: return dt
-
-def orderedValue(d):
-    return [d[k] for k in sorted(d.keys())]
-
-def orn2quatern(r11, r21, r31, r12, r22, r32):
-    eps = 1e-6
-    r11, r12, r21, r22 = -r11, -r12, -r21, -r22
-    A, B, C = 1, -(r11+r22+2) / 2, (r11+1) * (r22+1) / 4 - ((r12+r21) / 4) ** 2
-    quatern_a_sqs = [(-B + np.sqrt(B*B-4*A*C)) / (2*A), (-B - np.sqrt(B*B-4*A*C)) / (2*A)]
-    quatern_a = [np.sqrt(np.clip(x, 0, 1)) for x in quatern_a_sqs if -eps <= x <= 1 + eps]
-    if len(quatern_a) <= 0: raise TypeError("Invalid orientation")
-    if len(quatern_a) > 1:
-        r13 = r21 * r32 - r31 * r22
-        r23 = - r11 * r32 + r31 * r12
-        r33 = r11 * r22 - r21 * r12
-        r = np.sqrt(r13 ** 2 + r23 ** 2 + r33 ** 2)
-        t = np.abs(r33) / r
-        quatern_a = [x for x in quatern_a if np.abs(np.abs(4 * x * x - 1 - r11 - r22) - t) < eps]
-        if len(quatern_a) <= 0 or len(set(quatern_a)) > 1: raise TypeError("Invalid orientation")
-    qa = np.clip(quatern_a[0], 0, 1)
-    if np.abs(qa) > eps:
-        qd = (r21 - r12) / qa / 4
-        qc = (qd * r32 - qa * r31) / (qd ** 2 + qa ** 2) / 2
-        qb = r32 / qa / 2 - qd * qc / qa
-    else:
-        assert r12 == r21
-        qd = np.sqrt(- (r11 + r22) / 2)
-        if np.abs(qd) > eps: qb = r31 / qd / 2; qc = r32 / qd / 2
-        else: qc = np.sqrt((r22 - r11) / 2); qb = 1 if np.abs(qc) < eps else (r12 / qc / 2)
-    return qa, qb, qc, qd
+    with run("PNG"), run.use_tag: png = PNG = 'PNG'
+    with run("DCM"), run.use_tag: dcm = DCM = 'DCM'
+    with run(sitk_supported_modalities), run.all_tags:
+        for m in sitk_supported_modalities:
+            exec(f"{m.lower()} = {m.upper()} = '{m.upper()}'")
     
-def quatern2mat(a, b, c, d):
-    return np.array([[a*a+b*b-c*c-d*d, 2*b*c-2*a*d, 2*b*d+2*a*c], 
-                    [2*b*c+2*a*d, a*a+c*c-b*b-d*d, 2*c*d-2*a*b], 
-                    [2*b*d-2*a*c, 2*c*d+2*a*b, a*a+d*d-c*c-b*b]])
+    basic_info = "SeriesNumber SeriesDescription SeriesTime Shape".split()
+
+    @overload
+    def __init__(self, path: str, **kwargs):
+        if path.__class__ != Path: path = Path(path)
+        self.unresolved_warning = False
+        self.component_seperated = False
+        self.mismatch_seperated = False
+        done = False
+        if path.is_file():
+            with run(sitk_supported_modalities), run.any_tag:
+                if any([path.endswith(e) for e in sitk_modality_exts.keys()]): self.__init_sitk__(path, **kwargs); done =True
+            with run("DCM"), run.use_tag:
+                if path.endswith('.dcm') or path.endswith('.ima'): self.__init_dcm__(path.parent, **kwargs); done =True
+        elif path.is_dir():
+            with run("DCM"), run.use_tag:
+                if len([x for x in os.listdir(path) if x.endswith('.dcm') or x.endswith('.ima')]) > 0: self.__init_dcm__(path, **kwargs); done =True
+        if not done:
+            if not path.exists(): raise FileNotFoundError(f"Cannot find file/folder {path}. ")
+            self.ftype = kwargs.get('astype', None)
+            if self.ftype is None: raise TypeError(f"micomputing.IMG failed to recognize type of {path}. Use `astype=IMG.nii` or other image format to identify it. ")
+            with run(sitk_supported_modalities), run.any_tag:
+                if self.ftype in sitk_supported_modalities: self.__init_sitk__(path, **kwargs); done =True
+            with run("DCM"), run.use_tag:
+                if self.ftype == "DCM": self.__init_dcm__(path, **kwargs); done =True
+        if len(self.basics) <= 0: self.basics = basic_tags.copy()
+
+    @overload
+    def __init__(self, x: sitk.Image, **kwargs):
+        self.unresolved_warning = False
+        self.has_series = False
+        self.ftype = kwargs.get('ftype', None)
+        self.sid = kwargs.get('sid', get_uid10())
+        self.image = x
+        self.basics = kwargs.get('basics', basic_tags.copy())
+        self.file_list = kwargs.get('file_list', [])
+        self.info = kwargs.get('info', {})
+        if 'Shape' not in self.info:
+            if x.GetDepth(): self.info['Shape'] = x.GetSize() + (x.GetDepth(),)
+            else: self.info['Shape'] = x.GetSize()
+
+    @overload
+    def __init__(self, x: bt.Tensor, **kwargs):
+        x = x.squeeze()
+        if not x.dtype.is_floating_point: x = x.type(bt.int16)
+        if x.n_space >= 3: x = bt.permute_space(x, 2, 1, 0, *range(3, x.n_space))
+        else: x = x.transpose(0, 1)
+        x = x.detach().cpu()
+        self.unresolved_warning = False
+        self.has_series = x.has_special
+        self.ftype = kwargs.get('ftype', None)
+        self.basics = kwargs.get('basics', basic_tags)
+        if self.has_series:
+            if x.has_batch and x.has_channel: x = x.standard().flatten(0, 1).batch_dimension_(0)
+            if x.has_batch: series = x.split(1, [])
+            else: series = x.split(1, {})
+            self.images = {}
+            self.file_lists = {}
+            self.series_infos = {}
+            self.series_IDs = []
+            for i, s in enumerate(series):
+                s = s.squeeze()
+                sid = get_uid10()
+                self.series_IDs.append(sid)
+                self.images[sid] = sitk.GetImageFromArray(s)
+                self.file_lists[sid] = []
+                self.series_infos[sid] = dict(
+                    SeriesNumber = str(i + 1), 
+                    SeriesDescription = f"Series {i + 1}", 
+                    Shape = s.shape
+                )
+            return
+        self.sid = kwargs.get('sid', get_uid10())
+        self.image = sitk.GetImageFromArray(x)
+        self.file_list = kwargs.get('file_list', [])
+        self.info = kwargs.get('info', {})
+        if 'Shape' not in self.info:
+            self.info['Shape'] = x.space
+
+    with run(sitk_supported_modalities), run.any_tag:
+        def __init_sitk__(self, path, **kwargs):
+            self.has_series = False
+            self.ftype = item([t for e, t in sitk_modality_exts.items() if path.endswith(e)])
+            self.sid = ''
+            self.image = sitk.ReadImage(path)
+            self.file_list = [path]
+            self.basics = kwargs.get('basics', {})
+            self.info = kwargs.get('info', {})
+            self.info['Shape'] = self.image.GetSize()
     
-def mat2orn(mat): return -mat[0][0], -mat[1][0], mat[2][0], -mat[0][1], -mat[1][1], mat[2][1]
-def quatern2orn(*args): return mat2orn(quatern2mat(*args))
+    with run("DCM"), run.use_tag:       
+        def __init_dcm__(self, path, **kwargs):
+            """
+            Initialize a dicom data structure
 
-def niiheader_to_mat(h):
-    R = np.zeros((4, 4))
-    R[3][3] = 1
-    if h['sform_code'] > 0:
-        R[0] = h['srow_x']
-        R[1] = h['srow_y']
-        R[2] = h['srow_z']
-    elif h['qform_code'] == 0:
-        R[0][0], R[1][1], R[2][2] = h['pixdim'][1:4]
-    else:
-        b, c, d = h['quatern_b'], h['quatern_c'], h['quatern_d']
-        qx, qy, qz = h['qoffset_x'], h['qoffset_y'], h['qoffset_z']
-        qfac, dx, dy, dz = h['pixdim'][:4]
-        dz = dz if qfac >= 0 else -dz
-        a = np.sqrt(np.clip(1 - (b * b + c * c + d * d), 0, 1))
-        R[:3, :3] = quatern2mat(a, b, c, d) * np.array([[dx, dy, dz]])
-        R[:3, 3] = qx, qy, qz
-    R[:, 0], R[:, 1] = R[:, 1].copy(), R[:, 0].copy()
-    return R
+            Args:
+                path (str): the path to the DICOM directory. 
+                is_valid_series_ID (callable): a function that accepts a series id and returns whether it is valid.
+                    Use `lambda x: x == a` to select one series and `lambda x: x != a` to exclude one. 
+                is_valid_series (callable): a function that accepts a dictionary with keywords 'SeriesNumber', 'SeriesDescription', 
+                    and 'Shape'. One should use them to identify whether the series ought to be preserved. 
 
-def create_nii(dcm, creation):
-    data = bt.Tensor(dcm)
-    if not isinstance(dcm, DCM) and hasattr(dcm, 'bundle'): bundle = dcm.bundle
-    else:
-        header = nib.Nifti1Header()
-        header['regular'] = b'r'
-        header['dim'] = [data.ndim, *data.shape] + [1] * (7 - data.ndim)
-        bits = len(data.flatten()[0].tobytes()) * 8
-        header['bitpix'] = bits
-        header.set_data_dtype(data.numpy().dtype)
-        if isinstance(dcm, DCM): meta = dcm.bundle
-        else: meta = None
-        if meta and 'PixelSpacing' in meta: spacing = [float(x) for x in meta.PixelSpacing]
-        else: spacing = [1.0, 1.0]
-        if meta and 'SliceThickness' in meta: dz = [float(meta.SliceThickness)]
-        else: dz = [1.0]
-        header['pixdim'] = [1.0] + spacing + dz + [1.0] * (7 - data.ndim)
-        header['qform_code'] = 1
-        header['xyzt_units'] = 2
-        if meta:
-            header['qoffset_x'] = -float(meta.ImagePositionPatient[0])
-            header['qoffset_y'] = -float(meta.ImagePositionPatient[1])
-            header['qoffset_z'] = float(meta.ImagePositionPatient[2])
-            qa, qb, qc, qd = orn2quatern(*[float(x) for x in meta.ImageOrientationPatient])
-            header['quatern_b'] = qb
-            header['quatern_c'] = qc
-            header['quatern_d'] = qd
-        bundle = nib.Nifti1Image(data, None, header=header)
-    instance = creation(data)
-    instance.bundle = bundle
-    instance.path = getattr(dcm, 'path', 'Unknown')
-    return instance
+            Raises:
+                TypeError: Invalid DICOM files. 
+            """
+            self.has_series = True
+            self.ftype = 'DCM'
+            self.images = {}
+            self.file_lists = {}
+            self.series_infos = {}
+            self.basics = {}
+            self.series_IDs = sitk.ImageSeriesReader.GetGDCMSeriesIDs(path)
+            if len(self.series_IDs) <= 0: raise TypeError(f"Not dicom directory at {path}.")
+            is_valid_series_ID = kwargs.get('is_valid_series_ID', lambda x: True)
+            if isinstance(is_valid_series_ID, str): is_valid_series_ID = lambda x: x == is_valid_series_ID
+            if isinstance(is_valid_series_ID, list): is_valid_series_ID = lambda x: x in is_valid_series_ID
+            self.series_IDs = [i for i in self.series_IDs if is_valid_series_ID(i)]
+            if len(self.series_IDs) > 1:
+                is_valid_series = kwargs.get('is_valid_series', lambda x: True)
+                if isinstance(is_valid_series, str): is_valid_series = lambda x: is_valid_series in x.values()
+                if isinstance(is_valid_series, list): is_valid_series = lambda x: any([i in is_valid_series for i in x.values()])
+            else: is_valid_series = lambda x: True
+            ids_to_delete = []
+            for sid in self.series_IDs.copy():
+                file_list = list(sitk.ImageSeriesReader.GetGDCMSeriesFileNames(path, seriesID = sid))
+                with dcm.dcmread(file_list[0], stop_before_pixels=True, force=True) as dcm_header:
+                    if len(self.basics) <= 0: self.basics = {t: touch(lambda: str(dcm_header[tuple(eval('0x'+u) for u in t.split('|'))].value), "") for t in basic_tags}
+                    info = dict(SeriesNumber = dcm_header.SeriesNumber, SeriesDescription = dcm_header.SeriesDescription, SeriesTime = dcm_header.SeriesTime, Shape = (dcm_header.Rows, dcm_header.Columns, len(file_list)))
+                    if not is_valid_series(info): ids_to_delete.append(sid); continue
+                seperated = self._read_dcm(sid, file_list, info)
+                if seperated: ids_to_delete.append(sid)
+            for sid in ids_to_delete:
+                self.series_IDs.remove(sid)
+            self.series_IDs.sort(key=lambda x: tuple(map(eval, x.split('.'))))
+            if len(self.series_IDs) == 1:
+                self.has_series = False
+                self.sid = self.series_IDs[0]
+                self.image = self.images[self.sid]
+                self.file_list = self.file_lists[self.sid]
+                self.info = self.series_infos[self.sid]
+                
+        def _handle_dcm_size_exception(self, file_list, *_):
+            sizes = []
+            files = []
+            for file_path in file_list:
+                with dcm.dcmread(file_path, stop_before_pixels=True, force=True) as dcm_header:
+                    size = (dcm_header.Rows, dcm_header.Columns)
+                    if size in sizes: files[sizes.index(size)].append(file_path)
+                    else: sizes.append(size); files.append([file_path])
+            self.mismatch_seperated = True
+            return [({'Shape': s + (len(f),)}, f) for s, f in zip(sizes, files)]
+        
+        def _handle_dcm_non_uniform_exception(self, file_list, series_name):
+            all_med_params = {}
+            med_param_keys = []
+            med_param_names = []
+            med_param_values = []
+            for file_path in file_list:
+                with dcm.dcmread(file_path, stop_before_pixels=True, force=True) as dcm_header:
+                    if len(med_param_keys) == 0:
+                        for k in list(dcm_header.keys()):
+                            if '0018,' not in str(k) and str(k) != "(0008, 0008)": continue
+                            med_param_keys.append(k)
+                            med_param_names.append(dcm_header[k].name)
+                            med_param_values.append(set())
+                            
+                    all_med_params.setdefault(file_path, [])
+                    for i, k in enumerate(med_param_keys):
+                        v = dcm_header[k].value
+                        if not isinstance(v, (str, int, float, tuple)): v = str(v)
+                        all_med_params[file_path].append(v)
+                        med_param_values[i].add(v)
+            critical_pos = argmax(list(map(lambda x: len(x) > 1, med_param_values)))
+            if len(critical_pos) == len(med_param_keys):
+                file_list.sort()
+                print(f"Non uniform sampling in {series_name}")
+                print(f"Files: {file_list[0]}--{os.path.basename(file_list[-1])}")
+                print("Failed to seperate: same medical parameters ")
+                return
+            med_names = sublist(med_param_names, critical_pos)
+            partition = {}
+            for file_path in file_list:
+                value_set = tuple(sublist(all_med_params[file_path], critical_pos))
+                value_set = to_tuple(value_set)
+                partition.setdefault(value_set, [])
+                partition[value_set].append(file_path)
+            value_sets = sorted(list(partition.keys()))
+            return [(dict(zip(med_names, vs)), partition[vs]) for vs in value_sets]
+                    
+        def _read_dcm(self, sid, file_list, info):
+            series_name = f"[{info['SeriesTime']}] Series {info['SeriesDescription']}<{info['SeriesNumber']}> {info['Shape']}"
+            with dcm.dcmread(file_list[1 if len(file_list) > 1 else 0], stop_before_pixels=True, force=True) as dcm_header: pS = getattr(dcm_header, 'ImagePositionPatient', [0])[-1]
+            with dcm.dcmread(file_list[-2 if len(file_list) > 1 else -1], stop_before_pixels=True, force=True) as dcm_header: pE = getattr(dcm_header, 'ImagePositionPatient', [0])[-1]
+            if pS > pE: file_list = file_list[::-1]
+            with no_print as rec:
+                try:
+                    self.series_infos[sid] = info
+                    self.file_lists[sid] = file_list
+                    series_reader = sitk.ImageSeriesReader()
+                    series_reader.SetFileNames(file_list)
+                    self.images[sid] = series_reader.Execute()
+                    res = "DONE"
+                except RuntimeError as e:
+                    error = str(e)
+                    if 'Size mismatch' in error or 'requested regionRequested' in error:
+                        res = self._handle_dcm_size_exception(file_list, series_name)
+                    else:
+                        file_list.sort()
+                        self.unresolved_warning = True
+                        raise RuntimeError(f"Failure in {series_name} Files: {file_list[0]}--{os.path.basename(file_list[-1])}\n" + error)
+            if "WARNING" in rec.string():
+                if "Non uniform sampling" in str(rec):
+                    res = self._handle_dcm_non_uniform_exception(file_list, series_name)
+                else:
+                    file_list.sort()
+                    print(rec)
+                    print(f"in {series_name} Files: {file_list[0]}--{os.path.basename(file_list[-1])}")
+                    self.unresolved_warning = True; return False
+            if res is None: self.unresolved_warning = True; return False
+            if isinstance(res, str): return False
+            self.series_infos.pop(sid)
+            self.file_lists.pop(sid)
+            if sid in self.images: self.images.pop(sid)
+            for i, (extra_info, files) in enumerate(res):
+                key = sid + f'.{i+1}.0.0'
+                new_info = info.copy()
+                new_info.update(extra_info)
+                if 'Shape' in extra_info:
+                    d = extra_info['Shape'][-1]
+                    if d <= 3: continue
+                    new_info['Depth'] = d
+                sep = self._read_dcm(key, files, new_info)
+                if not sep: self.series_IDs.append(key)
+            return True
 
-def nii2dcm(nii, creation):
-    data = bt.Tensor(nii)
-    if not isinstance(nii, NII) and hasattr(nii, 'bundle'): bundle = nii.bundle
-    elif hasattr(nii, 'bundle'):
-        header = nii.bundle.header
-        if data.ndim > 3: raise TypeError("Dicom is unable to store high dimensional data [%dD]."%data.ndim)
-        while data.ndim < 3: data = data.unsqueeze(-1)
-        # use_meta_size = header.get('use_meta_size', False)
-        # if use_meta_size:
-        #     if dimof(data) <= 2: tosize = (self.bundle.Rows, self.bundle.Columns)[:dimof(data)]
-        #     else: tosize = (self.bundle.Rows, self.bundle.Columns) + data.shape[2:]
-        #     if any([s != 1 for s in scaling]):
-        #         raise_rescale()
-        #         dt = np.dtype(self.dtype)
-        #         mode = 'Nearest' if dt.kind == np.dtype(np.int).kind or dt.kind == np.dtype(np.uint).kind else 'Linear'
-        #         data = rescale_to(data.astype(np.float32), tosize, mode = mode).astype(data.dtype)
-        # else: tosize = data.shape
-        b, c, d = header.get('quatern', (0.0, 0.0, 0.0))
-        origin = header.get('origin', (0.0, 0.0, 0.0))
-        spacing = header.get('spacing', [1.0] * 8)
-        modality = header.get('modality', 'CT')
-        if 'header' in header:
-            if 'quatern' not in header:
-                b, c, d = [header['header'].get('quatern_b', 0.0),
-                        header['header'].get('quatern_c', 0.0),
-                        header['header'].get('quatern_d', 0.0)]
-            if 'origin' not in header:
-                origin = [header['header'].get('qoffset_x', 0.0),
-                        header['header'].get('qoffset_y', 0.0),
-                        header['header'].get('qoffset_z', 0.0)]
-            if 'spacing' not in header:
-                spacing = header['header'].get('pixdim', [1.0] * 8)
-        spacing = spacing[1:4]
-        from math import sqrt; a = sqrt(1-b*b-c*c-d*d)
-        orn = quatern2orn(a, b, c, d)
-        # orn = [-x for x in orn]
-        origin = [str(-origin[0]), str(-origin[1]), str(origin[2])]
-        slice_thickness = header.get('slice_thickness', spacing[2])
-        if 'header' not in header:
-            if 'quatern' not in header:
-                orn = [float(x) for x in self.bundle.ImageOrientationPatient]
-            if 'origin' not in header:
-                origin = self.bundle.ImagePositionPatient
-            if 'spacing' not in header:
-                slice_thickness = float(self.bundle.SliceThickness)
-                spacing = [float(x) for x in self.bundle.PixelSpacing] + \
-                    [header.get('slice_thickness', abs(slice_thickness))]
-            if 'Modality' in self.bundle: modality = self.bundle.Modality
-        if 'InstanceCreationTime' in self.bundle: ctime = self.bundle.InstanceCreationTime
-        if 'SOPInstanceUID' in self.bundle: UID = self.bundle.SOPInstanceUID
-        if 'ContentTime' in self.bundle: time = self.bundle.ContentTime
-        if 'TriggerTime' in self.bundle: ttime = self.bundle.TriggerTime
-        if 'ReconstructionTargetCenterPatient' in self.bundle:  center = self.bundle.ReconstructionTargetCenterPatient
-        bits = len(data.flatten()[0].tobytes()) * 8
-        traditional_origin = [-float(origin[0]), -float(origin[1]), float(origin[2])]
-        if np.abs(orn[2]) > 0: iz = 0
-        elif np.abs(orn[5]) > 0: iz = 1
-        else: iz = 2
-        position = np.dot(quatern2mat(*orn2quatern(*orn)).T, np.array([traditional_origin]).T)[-1, 0]
-        bundles = {}
-        typical_slice = float('inf'), None
-        Nslice = min(data.shape[-1], header.get('max_slice', float('inf')))
-        for slice in range(Nslice):
-            # sdcm = dcm.filereader.dcmread(self.bundle.filename, stop_before_pixels=True)
-            if not header.get('generate_slices', True) and 0 < slice < Nslice - 1: continue
-            sdcm = deepcopy(self.bundle)
-            if test(lambda:UID): *segs, tail = UID.split('.')
-            if 'SOPInstanceUID' in sdcm:
-                sdcm.SOPInstanceUID = '.'.join(segs + [str(int(tail) + slice)])
-            if 'ReconstructionTargetCenterPatient' in sdcm and not self.slice_only:
-                sdcm.ReconstructionTargetCenterPatient = [0.0, 0.0, center[-1] + slice * slice_thickness]
-            if 'TablePosition' in sdcm and not self.slice_only:
-                sdcm.TablePosition = position + slice * slice_thickness
-            if 'InstanceNumber' in sdcm and not self.slice_only:
-                sdcm.InstanceNumber = str(slice + 1)
-            if 'ImagePositionPatient' in sdcm and not self.slice_only:
-                sdcm.ImagePositionPatient = origin[:iz] + [str(float(origin[iz]) + slice * slice_thickness)] + origin[iz+1:]
-            if 'SliceLocation' in sdcm and not self.slice_only:
-                sdcm.SliceLocation = str(position + slice * slice_thickness)
-            if 'SliceThickness' in sdcm:
-                sdcm.SliceThickness = str(abs(slice_thickness))
-            if 'InStackPositionNumber' in sdcm and not self.slice_only:
-                sdcm.InStackPositionNumber = slice + 1
-            if 'ImageOrientationPatient' in sdcm:
-                sdcm.ImageOrientationPatient = [str(x) for x in orn]
-            # if 'InPlanePhaseEncodingDirection' in sdcm:
-            #     del sdcm['InPlanePhaseEncodingDirection']
-            if 'Modality' in sdcm and modality:
-                sdcm.Modality = modality
-            if 'PixelSpacing' in sdcm:
-                sdcm.PixelSpacing = [str(x) for x in spacing[:2]]
-            if 'BitsStored' in sdcm:
-                sdcm.BitsStored = bits
-            if 'HighBit' in sdcm:
-                sdcm.HighBit = bits - 1
-            if 'BitsAllocated' in sdcm:
-                sdcm.BitsAllocated = bits
-            if 'PixelRepresentation' in sdcm:
-                sdcm.PixelRepresentation = int(data.dtype.kind == 'u')
-            try:
-                self.bundle[0x7005, 0x1018]
-                try: sdcm[0x7005, 0x1018]
-                except: sdcm[0x7005, 0x1018] = self.bundle[0x7005, 0x1018]
-                sdcm[0x7005, 0x1018].value = chr(slice + 1).encode() + chr(0).encode()
-            except: pass
-            if 'LargestImagePixelValue' in sdcm:
-                sdcm.LargestImagePixelValue = np.max(data[..., slice])
-            if 'PixelData' in sdcm:
-                sdcm.PixelData = data[..., slice].tobytes()
-                sdcm['PixelData'].VR = 'OB'
-            if 'Rows' in sdcm and 'Columns' in sdcm:
-                sdcm.Rows, sdcm.Columns = data.shape[:2]
-            if float(sdcm.ImagePositionPatient[2]) < typical_slice[0]:
-                typical_slice = float(sdcm.ImagePositionPatient[2]), sdcm
-            bundles[slice] = sdcm
-        return bundles if header.get('generate_slices', True) else typical_slice[1]
+    @alias("__array__")
+    def to_numpy(self, sid=None):
+        """
+        Get the array data item of IMG.
+        Note: It is transposed for 3D arrays as the direct array by sitk is in size (n_z, n_x, n_y)
+        """
+        if self.has_series:
+            if sid is None: raise TypeError("Converting micomputing.IMG with series to numpy. Please Identify Series ID. ")
+            image = self.images[sid]
+        else: image = self.image
+        image_data = np.array(sitk.GetArrayFromImage(image))
+        if image_data.ndim >= 3: return image_data.transpose(2, 1, 0, *range(3, image_data.ndim))
+        else: return image_data.transpose(0, 1)
 
-class NII(bt.Tensor):
+    @alias("__tensor__")
+    def to_tensor(self, sid=None):
+        """
+        Get the tensor item of IMG.
+        Note: It is transposed for 3D arrays as the direct array by sitk is in size (n_z, n_x, n_y)
+        """
+        return bt.tensor(toI(self.to_numpy(sid=sid)))
 
-    def __new__(cls, instance):
-        if isinstance(instance, str):
-            p = path(instance)
-            if not p.ext: p = p // 'nii.gz'
-            niiBundle = nib.load(str(p))
-            data = niiBundle.get_data()
-            self = super().__new__(cls, data)
-            self.bundle = niiBundle
-            self.path = p
-            return self.transpose_(1, 0)
-        elif hasattr(instance, 'shape'):
-            if instance.ndim == 0: return instance
-            if isinstance(instance, NII): return instance
-            return create_nii(instance, lambda x: super().__new__(cls, x))
-        else: raise TypeError(f"Unknown input for NII: {instance}. ")
+    def from_array(self, array):
+        array = bt.tensor(array).squeeze()
+        if not array.dtype.is_floating_point: array = array.type(bt.int16)
+        if array.n_space >= 3: array = bt.permute_space(array, 2, 1, 0, *range(3, array.n_space))
+        else: array = array.transpose(0, 1)
+        array = array.detach().cpu()
+        old_image = self.image
+        self.image = sitk.GetImageFromArray(array)
+        self.image.SetDirection(old_image.GetDirection())
+        self.image.SetSpacing(old_image.GetSpacing())
+        self.image.SetOrigin(old_image.GetOrigin())
+        return self
+        
+    def __str__(self):
+        str_print = SPrint()
+        if self.has_series:
+            str_print(f"<micomputing.IMG with {len(self.series_IDs)} series, ftype={repr(self.ftype)}, dtype={repr(self.images[self.series_IDs[0]].GetPixelIDTypeAsString())}>")
+            for sid in self.series_IDs:
+                info = self.series_infos[sid]
+                extra = info.copy()
+                for k in IMG.basic_info: extra.pop(k)
+                if len(extra) > 0: str_print(f"\t[{info['SeriesTime']}] Series {sid}: {info['SeriesDescription']}<{info['SeriesNumber']}>, Size: {info['Shape']}, {str(extra)}.")
+                else: str_print(f"\t[{info['SeriesTime']}] Series {sid}: {info['SeriesDescription']}<{info['SeriesNumber']}>, Size: {info['Shape']}.")
+        else: str_print(f"<micomputing.IMG object, Size: {self.info['Shape']}, ftype={repr(self.ftype)}, dtype={repr(self.image.GetPixelIDTypeAsString())}>")
+        return str_print.text
+        
+    def split(self):
+        if not self.has_series: raise TypeError("micomputing.IMG without series is not iterable. ")
+        collection = []
+        for sid in self.series_IDs:
+            collection.append(self[sid])
+        return collection
+    
+    def __getitem__(self, sid):
+        if not self.has_series: raise TypeError("micomputing.IMG without series is not iterable. ")
+        if not isinstance(sid, str): sid = str(sid)
+        if '.' not in sid:
+            is_series_num = touch(lambda: int(sid), False)
+            if is_series_num: sid = item([x for x in self.series_IDs if self.series_infos[x]['SeriesNumber'] == sid])
+            else: sid = item([x for x in self.series_IDs if self.series_infos[x]['SeriesDescription'] == sid])
+        return IMG(self.images[sid], sid=sid, info=self.series_infos[sid], file_list=self.file_lists[sid], ftype=self.ftype)
+    
+    def __iter__(self):
+        if not self.has_series: raise TypeError("micomputing.IMG without series is not iterable. ")
+        for sid in self.series_IDs:
+            yield self[sid]
 
     def __enter__(self): return self
 
     def __exit__(self, *args): return False
 
-    def __call__(self, data=None):
-        if data is None: return self.bundle
-        data.bundle = self.bundle
-        data.path = self.path
-        return NII(data)
+    def astype(self, ftype): self.ftype = ftype; return self
+    
+    def copy(self):
+        if self.has_series:
+            tmp_image = self.images[self.series_IDs[0]]
+            output = IMG(tmp_image, ftype=self.ftype, basics=self.basics, file_list={}, info={})
+            output.unresolved_warning = False
+            output.has_series = True
+            output.images = self.images.copy()
+            output.file_lists = self.file_lists.copy()
+            output.series_infos = self.series_infos.copy()
+            output.basics = self.basics.copy()
+            output.series_IDs = self.series_IDs.copy()
+            return output
+        return IMG(self.image, ftype=self.ftype, sid=self.sid, basics=self.basics, file_list=self.file_list, info=self.info)
+    
+    @property
+    def path(self):
+        if len(self.file_list) == 1: return self.file_list[0]
+        return self.file_list[0].dirname
+    
+    @property
+    @alias("affine_of")
+    def affine(self, image=None):
+        """
+        Return the Niftii affine matrix that converts image indices to world coordinates. 
+        Note: sitk contains direction in DICOM format with +x means left and +y means posterior.
+        Hence, Niftii format of IMG requires the first two rows of the affine matrix being inversed. 
+        """
+        if image is None:
+            if self.has_series: raise Error('Property')("No property 'affine' for micomputing.IMG with series. ")
+            image = self.image
+        if self.has_series and isinstance(image, str): image = self.images[image]
+        dir = np.array(image.GetDirection())
+        ndim = image.GetDimension()
+        avouch(ndim ** 2 == len(dir))
+        A = dir.reshape((ndim, ndim)) @ np.diag(np.array(image.GetSpacing()))
+        b = np.array(image.GetOrigin()).reshape((ndim, 1))
+        c = np.concatenate((np.zeros((1, ndim)), np.ones((1, 1))), 1)
+        return np.diag([-1, -1] + [1] * (ndim - 1)) @ np.concatenate((np.concatenate((A, b), 1), c), 0)
 
-    def _create_bundle(self, data, use_header_size=False, spacing=None):
-        data = bt.Tensor(data)
-        header = self.bundle.header.copy()
-        if spacing is not None: header['pixdim'] = [1.0] + list(spacing) + [1.0] * (7 - data.ndim)
-        if use_header_size:
-            raise NotImplementedError("It appears that the developers forgot to implement keyword use_header_size! Please contact us to remind us. ")
-            # if any([s != 1 for s in scaling]):
-            #     raise_rescale()
-            #     dt = np.dtype(self.dtype)
-            #     mode = 'Nearest' if dt.kind == np.dtype(np.int).kind or dt.kind == np.dtype(np.uint).kind else 'Linear'
-            #     data = rescale_to(data.astype(np.float32), header['dim'][1: dimof(data) + 1], mode = mode).astype(data.dtype)
-        else: header['dim'] = [data.ndim] + list(data.shape) + [1] * (7 - data.ndim)
-        return nib.Nifti1Image(data.transpose(1, 0), None, header)
+    @affine.setter
+    @alias("set_affine")
+    def affine(self, aff, spacing=None, spacing2one=False):
+        if self.has_series: raise Error('Property')("Cannot set property 'affine' for micomputing.IMG with series. ")
+        ndim = aff.shape[-1] - 1
+        try: aff = aff.reshape((ndim + 1, ndim + 1))
+        except ValueError: raise Error('Value')(f"Cannot set affine matrix to image: expected shape ({ndim + 1}, {ndim + 1}) but got {aff.shape}")
+        flipped_aff = np.diag([-1, -1] + [1] * (ndim - 1)) @ aff
+        A = flipped_aff[:ndim, :ndim]
+        b = flipped_aff[:ndim, -1]
+        self.image.SetOrigin(b.tolist())
+        if spacing2one:
+            avouch(spacing is None)
+            self.image.SetSpacing((1,) * ndim)
+        elif spacing is not None:
+            if isinstance(spacing, (int, float)): spacing = (spacing,) * ndim
+            avouch(len(spacing) == ndim)
+            self.image.SetSpacing(spacing)
+            A = A @ np.diag(1 / np.array(spacing))
+        else: A = A @ np.diag(1 / np.array(self.image.GetSpacing()))
+        self.image.SetDirection(A.flatten().tolist())
+    
+    @property
+    @alias("origin_of")
+    def origin(self, image=None):
+        if self.has_series:
+            if isinstance(image, str): image = self.images[image]
+            raise Error('Property')("No property 'origin' for micomputing.IMG with series. ")
+        if image is None: image = self.image
+        avouch(isinstance(image, sitk.Image), "Only Image type has origin.")
+        return tuple(np.array(image.GetOrigin()) * np.array([-1, -1] + [1] * (image.GetDimension() - 2)))
 
-    def save(self, path): nib.save(self.bundle, str(path))
+    @origin.setter
+    @alias("set_origin")
+    def origin(self, *org):
+        org = arg_tuple(org)
+        if len(org) == 1: org = org * self.ndim
+        if self.has_series: raise Error('Property')("Cannot set property 'origin' for micomputing.IMG with series. ")
+        self.image.SetOrigin(tuple(s * x for s, x in zip([-1, -1, 1], org)))
+    
+    @property
+    @alias("spacing_of")
+    def spacing(self, image=None):
+        if self.has_series:
+            if isinstance(image, str): image = self.images[image]
+            raise Error('Property')("No property 'spacing' for micomputing.IMG with series. ")
+        if image is None: image = self.image
+        avouch(isinstance(image, sitk.Image), "Only Image type has spacing.")
+        return tuple(np.array(self.image.GetSpacing()))
 
-    def save_as_dcm(self, path): DCM(self).save(str(path))
+    @spacing.setter
+    @alias("set_spacing")
+    def spacing(self, *sp):
+        sp = arg_tuple(sp)
+        if len(sp) == 1: sp = sp * self.ndim
+        if self.has_series: raise Error('Property')("Cannot set property 'spacing' for micomputing.IMG with series. ")
+        self.image.SetSpacing(sp)
+    
+    @property
+    @alias("ndim_of")
+    def ndim(self, image=None):
+        if self.has_series:
+            if isinstance(image, str): image = self.images[image]
+            raise Error('Property')("No property 'ndim' for micomputing.IMG with series. ")
+        if image is None: image = self.image
+        avouch(isinstance(image, sitk.Image), "Only Image type has ndim.")
+        return self.image.GetDimension()
+    
+    @property
+    def shape(self):
+        if self.has_series: raise Error('Property')("No property 'shape' for micomputing.IMG with series. ")
+        return tuple(self.image.GetSize())
+    
+    @property
+    def orientation(self):
+        if self.has_series: raise Error('Property')("No property 'orientation' for micomputing.IMG with series. ")
+        affine = self.affine
+        dim_ord = np.abs(affine[:-1, :-1]).argmax(0).tolist()
+        try: dx = np.array([affine[dim_ord[d], d] for d in range(len(dim_ord))])
+        except ValueError: raise TypeError(f"Invalid affine matrix: {affine}")
+        return ''.join([['RL', 'AP', 'SI'][i][j] for i, j in zip(dim_ord, dx > 0)])
 
-    def update(self):
-        self.bundle = self._create_bundle(self, False)
-
-    def save_data(self, data, path, use_header_size=False):
-        nib.save(self._create_bundle(data, use_header_size), str(path))
-
-    def spacing(self): return self.bundle.header['pixdim'][1: self.ndim + 1]
-
-    # def resample(self, new_spacing):
-    #     raise_rescale()
-    #     spacing = self.spacing()
-    #     new_spacing = totuple(new_spacing)
-    #     if len(new_spacing) == 1: new_spacing *= len(spacing)
-    #     dt = np.dtype(self.dtype)
-    #     mode = 'Nearest' if dt.kind == np.dtype(np.int).kind or dt.kind == np.dtype(np.uint).kind else 'Linear'
-    #     new_spacing = tonumpy(new_spacing)
-    #     new_data = rescale_to(self.astype(np.float32), 
-    #         tuple(int(x) for x in (np.array(self.shape) * spacing / new_spacing).round()), mode = mode).astype(self.dtype)
-    #     instance = super().__new__(NII, new_data.shape, dtype=self.dtype)
-    #     instance[...] = new_data
-    #     instance.path = self.path
-    #     instance.bundle = self._create_bundle(new_data, spacing = new_spacing)
-    #     return instance
-
-    def affine(self):
-        return niiheader_to_mat(self.bundle.header)
-
-    @classmethod
-    def __torch_function__(cls, func, types, args=(), kwargs=None):
-        self = args[0]
-        with torch._C.DisableTorchFunction():
-            ret = super().__torch_function__(func, types, args, kwargs)
-
-        def apply(r):
-            r.bundle = self.bundle
-            r.path = self.path
-
-        return bt.Tensor.__torch_function_convert_apply__(ret, apply, cls)
-
-class DCM(bt.Tensor):
-
-    def __new__(cls, instance, slice_only=False):
-        if isinstance(instance, str):
-            p = path(instance)
-            if not p.isdir():
-                if not slice_only: p = p@path.Folder
-            else: slice_only = False
-            dcmBundle = dcm.filereader.dcmread(path(__file__)@path.Folder/"template.dcm")
-            slice_arrays = {}
-            slices = {}
-            zs = {}
-            readable = False
-            direction_down = True
-            for p in ([p] if slice_only else p):
-                if not p.ext.lower() in ('dcm', 'ima'): continue
-                try: image_slice = dcm.filereader.dcmread(p)
-                except: continue
-                readable = True
-                n_slice = int(image_slice.InstanceNumber)
-                if 'SeriesNumber' in image_slice: n_series = int(image_slice.SeriesNumber)
-                else: n_series = 0
-                try: slice_array = image_slice.pixel_array
-                except:
-                    try:
-                        p_dicom = (p@path.Folder//'dicom').mkdir()/p@path.File
-                        if not p_dicom.exists():
-                            _, stderr = shell(f"dcmdjpeg {p} {p_dicom}")
-                        else: stderr = ''
-                        if stderr: raise TypeError("Unknown encoding: %s."%p)
-                    except: raise TypeError("Unknown encoding: %s."%p)
-                    image_slice = dcm.filereader.dcmread(p_dicom)
-                    try: slice_array = image_slice.pixel_array
-                    except: raise TypeError("Unknown encoding: %s."%p)
-                if n_series not in slices:
-                    slice_arrays[n_series] = {}
-                    slices[n_series] = {}
-                    zs[n_series] = {}
-                slice_arrays[n_series][n_slice] = slice_array
-                slices[n_series][n_slice] = image_slice
-                if image_slice.ImageOrientationPatient[2] != 0: iz = 0
-                elif image_slice.ImageOrientationPatient[5] != 0: iz = 1
-                else: iz = 2
-                if 'ImagePositionPatient' in image_slice: z = float(image_slice.ImagePositionPatient[iz])
-                elif 'TablePosition' in image_slice: z = image_slice.TablePosition
-                elif 'SliceLocation' in image_slice: z = float(image_slice.SliceLocation)
-                else: z = 0.
-                zs[n_series][n_slice] = z
-            if not readable: raise TypeError("Could not create a DICOM object from " + p + ".")
-            sorted_series = sorted([(n_series, slices[n_series]) for n_series in slices], key=lambda x: -len(x[1]))
-            n_series = sorted_series[0][0]
-            possible_series = [s[1] for s in sorted_series if s[0] == n_series]
-            if len(possible_series) >= 8: series = possible_series[7]
-            elif len(possible_series) >= 3: series = possible_series[2]
-            else: series = possible_series[0]
-            min_slice = 1000, None
-            max_slice = 0, None
-            top_slices = -float('inf'), {}
-            bottom_slices = float('inf'), {}
-            for n_slice in series:
-                image_slice = series[n_slice]
-                z = zs[n_series][n_slice]
-                if n_slice < min_slice[0]:
-                    min_slice = n_slice, image_slice
-                if n_slice > max_slice[0]:
-                    max_slice = n_slice, image_slice
-                if z > top_slices[0]:
-                    top_slices = z, {n_slice: image_slice}
-                if z < bottom_slices[0]:
-                    bottom_slices = z, {n_slice: image_slice}
-                if z == top_slices[0]:
-                    top_slices[1][n_slice] = image_slice
-                if z == bottom_slices[0]:
-                    bottom_slices[1][n_slice] = image_slice
-            N = min(len(top_slices[1].keys()), len(bottom_slices[1].keys()))
-            if N >= 8: i_series = 7
-            elif N >= 3: i_series = 2
-            else: i_series = 0
-            bound1 = sorted(top_slices[1].keys())[i_series]
-            bound2 = sorted(bottom_slices[1].keys())[i_series]
-            if bound1 > bound2:
-                zs = {k: v for k, v in zs[n_series].items() if bound2 <= k <= bound1}
-                slices = {k: v for k, v in slice_arrays[n_series].items() if bound2 <= k <= bound1}
-                max_slice = bound1, top_slices[1][bound1]
-                min_slice = bound2, bottom_slices[1][bound2]
-            elif bound1 < bound2:
-                zs = {k: v for k, v in zs[n_series].items() if bound1 <= k <= bound2}
-                slices = {k: v for k, v in slice_arrays[n_series].items() if bound1 <= k <= bound2}
-                max_slice = bound2, bottom_slices[1][bound2]
-                min_slice = bound1, top_slices[1][bound1]
-            else:
-                zs = {k: v for k, v in zs[n_series].items()}
-                slices = {k: v for k, v in slice_arrays[n_series].items()}
-                bound = sorted(series.keys())[0]
-                max_slice = min_slice = bound, series[bound]
-            direction_down = zs[max_slice[0]] < zs[min_slice[0]]
-            typical_slice = max_slice[1] if direction_down else min_slice[1]
-            for key in dir(typical_slice):
-                if key == 'PixelData' or '_' in key: continue
-                if key.capitalize() != key[0] + key[1:].lower(): continue
-                dcmBundle[key] = typical_slice[key]
-            ozs = bt.Tensor(sorted(zs.values()))
-            if len(set(ozs)) > 1:
-                volume = bt.stack(orderedValue({zs[i]: slices[i] for i in slices}), -1)
-                dcmBundle.SliceThickness = str(bt.abs(bt.mean(ozs[1:] - ozs[:-1])).item())
-            else:
-                volume = bt.stack(orderedValue(slices), -1)
-            volume = volume.astype(toU(volume.dtype) if dcmBundle.PixelRepresentation else toI(volume.dtype))
-            dcmBundle.PixelData = volume.tobytes()
-            self = super().__new__(cls, volume)
-            self.bundle = dcmBundle
-            self.path = path
-            self.slice_only = slice_only
-            self.update()
-            return self
-        elif hasattr(instance, 'shape'):
-            if instance.ndim == 0: return instance
-            if isinstance(instance, DCM): return instance
-            if isinstance(instance, NII):
-                input = nii2dcmBundle(instance)
-            else:
-                data = bt.Tensor(instance)
-                input.path = 'Unknown'
-                self.slice_only = False
-            self.update()
-            return self
-        else: raise TypeError(f"Unknown input for DCM: {instance}. ")
-
-    def __enter__(self): return self
-    def __exit__(self, *args): return False
-    def __call__(self, data=None):
-        if data is None: return self.bundle
-        data.bundle = self.bundle
-        data.path = self.path
-        return DCM(data)
-    def _create_bundles(self, data, **header):
-        '''
-        header: a dict containing 'quatern', 'origin', 'spacing',
-            'slice_thickness', 'use_meta_size', 'max_slice',
-            'generate_slices', 'modality', 'header'
-        '''
-        if 'header' not in header and isinstance(data, NII):
-            header['header'] = data().header
-        data = np.array(data)
-        # data = data.transpose(1, 0, *range(2, dimof(data)))
-        if dimof(data) > 3: raise TypeError("Dicom is unable to store high dimensional data [%dD]."%dimof(data))
-        while dimof(data) < 3: data = np.expand_dims(data, -1)
-        use_meta_size = header.get('use_meta_size', False)
-        if use_meta_size:
-            if dimof(data) <= 2: tosize = (self.bundle.Rows, self.bundle.Columns)[:dimof(data)]
-            else: tosize = (self.bundle.Rows, self.bundle.Columns) + data.shape[2:]
-            if any([s != 1 for s in scaling]):
-                raise_rescale()
-                dt = np.dtype(self.dtype)
-                mode = 'Nearest' if dt.kind == np.dtype(np.int).kind or dt.kind == np.dtype(np.uint).kind else 'Linear'
-                data = rescale_to(data.astype(np.float32), tosize, mode = mode).astype(data.dtype)
-        else: tosize = data.shape
-        b, c, d = header.get('quatern', (0.0, 0.0, 0.0))
-        origin = header.get('origin', (0.0, 0.0, 0.0))
-        spacing = header.get('spacing', [1.0] * 8)
-        modality = header.get('modality', 'CT')
-        if 'header' in header:
-            if 'quatern' not in header:
-                b, c, d = [header['header'].get('quatern_b', 0.0),
-                        header['header'].get('quatern_c', 0.0),
-                        header['header'].get('quatern_d', 0.0)]
-            if 'origin' not in header:
-                origin = [header['header'].get('qoffset_x', 0.0),
-                        header['header'].get('qoffset_y', 0.0),
-                        header['header'].get('qoffset_z', 0.0)]
-            if 'spacing' not in header:
-                spacing = header['header'].get('pixdim', [1.0] * 8)
-        spacing = spacing[1:4]
-        from math import sqrt; a = sqrt(1-b*b-c*c-d*d)
-        orn = quatern2orn(a, b, c, d)
-        # orn = [-x for x in orn]
-        origin = [str(-origin[0]), str(-origin[1]), str(origin[2])]
-        slice_thickness = header.get('slice_thickness', spacing[2])
-        if 'header' not in header:
-            if 'quatern' not in header:
-                orn = [float(x) for x in self.bundle.ImageOrientationPatient]
-            if 'origin' not in header:
-                origin = self.bundle.ImagePositionPatient
-            if 'spacing' not in header:
-                slice_thickness = float(self.bundle.SliceThickness)
-                spacing = [float(x) for x in self.bundle.PixelSpacing] + \
-                    [header.get('slice_thickness', abs(slice_thickness))]
-            if 'Modality' in self.bundle: modality = self.bundle.Modality
-        if 'InstanceCreationTime' in self.bundle: ctime = self.bundle.InstanceCreationTime
-        if 'SOPInstanceUID' in self.bundle: UID = self.bundle.SOPInstanceUID
-        if 'ContentTime' in self.bundle: time = self.bundle.ContentTime
-        if 'TriggerTime' in self.bundle: ttime = self.bundle.TriggerTime
-        if 'ReconstructionTargetCenterPatient' in self.bundle:  center = self.bundle.ReconstructionTargetCenterPatient
-        bits = len(data.flatten()[0].tobytes()) * 8
-        traditional_origin = [-float(origin[0]), -float(origin[1]), float(origin[2])]
-        if np.abs(orn[2]) > 0: iz = 0
-        elif np.abs(orn[5]) > 0: iz = 1
-        else: iz = 2
-        position = np.dot(quatern2mat(*orn2quatern(*orn)).T, np.array([traditional_origin]).T)[-1, 0]
-        bundles = {}
-        typical_slice = float('inf'), None
-        Nslice = min(data.shape[-1], header.get('max_slice', float('inf')))
-        for slice in range(Nslice):
-            # sdcm = dcm.filereader.dcmread(self.bundle.filename, stop_before_pixels=True)
-            if not header.get('generate_slices', True) and 0 < slice < Nslice - 1: continue
-            sdcm = deepcopy(self.bundle)
-            if test(lambda:UID): *segs, tail = UID.split('.')
-            if 'SOPInstanceUID' in sdcm:
-                sdcm.SOPInstanceUID = '.'.join(segs + [str(int(tail) + slice)])
-            if 'ReconstructionTargetCenterPatient' in sdcm and not self.slice_only:
-                sdcm.ReconstructionTargetCenterPatient = [0.0, 0.0, center[-1] + slice * slice_thickness]
-            if 'TablePosition' in sdcm and not self.slice_only:
-                sdcm.TablePosition = position + slice * slice_thickness
-            if 'InstanceNumber' in sdcm and not self.slice_only:
-                sdcm.InstanceNumber = str(slice + 1)
-            if 'ImagePositionPatient' in sdcm and not self.slice_only:
-                sdcm.ImagePositionPatient = origin[:iz] + [str(float(origin[iz]) + slice * slice_thickness)] + origin[iz+1:]
-            if 'SliceLocation' in sdcm and not self.slice_only:
-                sdcm.SliceLocation = str(position + slice * slice_thickness)
-            if 'SliceThickness' in sdcm:
-                sdcm.SliceThickness = str(abs(slice_thickness))
-            if 'InStackPositionNumber' in sdcm and not self.slice_only:
-                sdcm.InStackPositionNumber = slice + 1
-            if 'ImageOrientationPatient' in sdcm:
-                sdcm.ImageOrientationPatient = [str(x) for x in orn]
-            # if 'InPlanePhaseEncodingDirection' in sdcm:
-            #     del sdcm['InPlanePhaseEncodingDirection']
-            if 'Modality' in sdcm and modality:
-                sdcm.Modality = modality
-            if 'PixelSpacing' in sdcm:
-                sdcm.PixelSpacing = [str(x) for x in spacing[:2]]
-            if 'BitsStored' in sdcm:
-                sdcm.BitsStored = bits
-            if 'HighBit' in sdcm:
-                sdcm.HighBit = bits - 1
-            if 'BitsAllocated' in sdcm:
-                sdcm.BitsAllocated = bits
-            if 'PixelRepresentation' in sdcm:
-                sdcm.PixelRepresentation = int(data.dtype.kind == 'u')
-            try:
-                self.bundle[0x7005, 0x1018]
-                try: sdcm[0x7005, 0x1018]
-                except: sdcm[0x7005, 0x1018] = self.bundle[0x7005, 0x1018]
-                sdcm[0x7005, 0x1018].value = chr(slice + 1).encode() + chr(0).encode()
+    def reorient(self, orient='LPI'):
+        if self.has_series: raise Error('Property')("Cannot reorient for micomputing.IMG with series. ")
+        axis = {'L':'LR', 'R':'LR', 'A':'AP', 'P':'AP', 'I':'SI', 'S':'SI'}
+        from .funcs import reorient
+        from .trans import Translation, Reflection, DimPermutation, ComposedTransformation
+        orient_axis = [axis[i] for i in self.orientation]
+        permutation = [orient_axis.index(axis[i]) for i in orient]
+        if len(permutation) < len(orient_axis):
+            permutation.extend(list(set(range(len(orient_axis))) - set(permutation)))
+        new_orient = [self.orientation[i] for i in permutation]
+        reflect_dims = [i for i, (a, b) in enumerate(zip(new_orient, orient)) if a != b]
+        data = self.to_tensor()
+        output_data = reorient(data, from_orient=self.orientation, to_orient=orient)
+        if output_data.n_space >= 3: output_data = bt.permute_space(output_data, 2, 1, 0, *range(3, output_data.n_space))
+        else: output_data = output_data.transpose(0, 1)
+        output_image = sitk.GetImageFromArray(output_data)
+        for t in basic_tags: output_image.SetMetaData(t, self.basics[t])
+        n_dim = len(permutation)
+        spacing = tuple(self.image.GetSpacing()[i] for i in permutation)
+        # correct_trans = Translation([(s - 1) * n for s, n in zip(spacing, data.shape)]).backward_(False)
+        reflect = Reflection(reflect_dims, image_size=data).backward_(False)
+        permute = DimPermutation(permutation).backward_(False)
+        trans = ComposedTransformation(permute, reflect)
+        affine = (np.diag([-1, -1] + [1] * (n_dim - 1)) @ self.affine @ trans.affine(n_dim).detach().cpu().numpy()).squeeze()
+        output_image.SetDirection((affine[:n_dim, :n_dim] @ np.diag([1/s for s in spacing])).flatten().tolist())
+        output_image.SetOrigin(affine[:n_dim, -1].tolist())
+        output_image.SetSpacing(spacing)
+        output = self.copy()
+        output.image = output_image
+        return output
+    
+    @property
+    def patient_info(self):
+        return dict(
+            name = self.basics["0010|0010"],
+            sex = self.basics["0010|0040"],
+            age = self.basics["0010|1010"],
+            height = self.basics["0010|1020"],
+            weight = self.basics["0010|1030"],
+            birthday = self.basics["0010|0030"]
+        )
+    
+    @property
+    def patient_name(self): return self.basics["0010|0010"]
+    
+    @property
+    def patient_sex(self): return self.basics["0010|0040"]
+    
+    @property
+    def patient_age(self): return self.basics["0010|1010"]
+    
+    @property
+    def modality(self): return self.basics["0008|0060"]
+    
+    def resample(self, *new_spacing, new_size=None, mode='nearest'):
+        if len(new_spacing) == 1 and isinstance(new_spacing[0], (tuple, list)): new_spacing = new_spacing[0]
+        new_spacing = to_list(new_spacing)
+        if len(new_spacing) == 1: new_spacing *= self.ndim
+        if new_size is not None: new_size = to_list(new_size)
+        def resample(image, new_size=new_size, mode=mode):
+            resampler = sitk.ResampleImageFilter()
+            if new_size is None: 
+                old_spacing = image.GetSpacing()
+                old_size = image.GetSize()
+                new_size = [int(a * b / c) for a, b, c in zip(old_size, old_spacing, new_spacing)]
+            if mode.lower() == 'linear': method = sitk.sitkLinear
+            elif mode.lower() == 'nearest': method = sitk.sitkNearestNeighbor
+            elif mode.lower() == 'bspline': method = sitk.sitkBSpline
+            else: raise TypeError("Unrecognized argument 'mode'. ")
+            resampler.SetReferenceImage(image)
+            resampler.SetOutputSpacing(new_spacing)
+            resampler.SetSize(new_size)
+            resampler.SetTransform(sitk.Transform(3, sitk.sitkIdentity))
+            resampler.SetInterpolator(method)
+            return resampler.Execute(image), new_size
+        if self.has_series:
+            for sid in self.series_IDs:
+                self.images[sid], self.series_infos[sid]['Shape'] = resample(self.images[sid])
+        else: self.image, self.info['Shape'] = resample(self.image)
+        return self
+    
+    def _compose(self, *images):
+        # Not sure if this is correct. [TODO: Check]
+        if len(images) == 1 and isinstance(images[0], (list, tuple)): images = images[0]
+        if len(images) <= 5:
+            composer = sitk.JoinSeriesImageFilter()
+            try: return composer.Execute(*images)
             except: pass
-            if 'LargestImagePixelValue' in sdcm:
-                sdcm.LargestImagePixelValue = np.max(data[..., slice])
-            if 'PixelData' in sdcm:
-                sdcm.PixelData = data[..., slice].tobytes()
-                sdcm['PixelData'].VR = 'OB'
-            if 'Rows' in sdcm and 'Columns' in sdcm:
-                sdcm.Rows, sdcm.Columns = data.shape[:2]
-            if float(sdcm.ImagePositionPatient[2]) < typical_slice[0]:
-                typical_slice = float(sdcm.ImagePositionPatient[2]), sdcm
-            bundles[slice] = sdcm
-        return bundles if header.get('generate_slices', True) else typical_slice[1]
-    def save(self, path): self.save_data(self, str(path))
-    def save_as_nii(self, path): NII(self).save(str(path))
-    def update(self, header=None):
-        if not isinstance(self.bundle, dcm.dataset.Dataset):
-            self.bundle = dcm.filereader.dcmread(Template)
-        if header: self.bundle = self._create_bundles(self, generate_slices=False, header=header)
-        else: self.bundle = self._create_bundles(self, generate_slices=False)
-    def save_data(self, data, fpath, **header):
-        fpath = str(fpath)
-        if os.path.isfile(fpath):
-            path = os.path.dirname(fpath)
-            pmkdir(path)
+        images_origin = [x.GetOrigin() for x in images]
+        images_data = map(sitk.GetArrayFromImage, images)
+        template = images[0]
+        spacing = template.GetSpacing()
+        affine = np.array(template.GetDirection())
+        m = np.sqrt(len(affine))
+        affine = affine.reshape((m, m))
+        if len(set(images_origin)) == 1:
+            output_data = np.stack(images_data)
+            output_data = output_data.transpose(*range(1, output_data.ndim), 0)
         else:
-            pmkdir(fpath)
-            if '.' in os.path.basename(fpath):
-                path = os.path.dirname(fpath)
-            else:
-                path = fpath
-                fpath = os.path.join(path, "slice.dcm")
-        slices = self._create_bundles(data, **header)
-        if self.slice_only: slices[0].save_as(fpath); return
-        for i, s in slices.items():
-            *pfix, sfix = fpath.split('.')
-            s.save_as('.'.join(pfix) + "_%04d"%(i + 1) + '.' + sfix)
-    def spacing(self):
-        meta = self()
-        if 'PixelSpacing' in meta: spacing = [float(x) for x in meta.PixelSpacing]
-        else: spacing = [1.0, 1.0]
-        if 'SliceThickness' in meta: dz = [float(meta.SliceThickness)]
-        else: dz = [1.0]
-        spacing = spacing + dz
-        return np.array(spacing)
-    def resample(self, new_spacing):
-        raise_rescale()
-        spacing = self.spacing()
-        new_spacing = totuple(new_spacing)
-        if len(new_spacing) == 1: new_spacing *= len(spacing)
-        dt = np.dtype(self.dtype)
-        mode = 'Nearest' if dt.kind == np.dtype(np.int).kind or dt.kind == np.dtype(np.uint).kind else 'Linear'
-        new_spacing = tonumpy(new_spacing)
-        new_data = rescale_to(self.astype(np.float32), 
-            tuple(int(x) for x in (np.array(self.shape) * spacing / new_spacing).round()), mode = mode).astype(self.dtype)
-        instance = super().__new__(DCM, new_data.shape, dtype=self.dtype)
-        instance[...] = new_data
-        instance.path = self.path
-        instance.slice_only = self.slice_only
-        instance.bundle = self._create_bundle(new_data, spacing = new_spacing)
-        return instance
-    def affine(self):
-        return niiheader_to_mat(NII(self)().header)
+            origins = np.array(images_origin)
+            coords = np.linalg.inv(affine) @ origins.T
+            vec_dim = item(argmax(np.abs(coords[:, 0] - coords[:, -1]).tolist()))
+            spacing_z = np.sqrt(np.square(origins[1:] - origins[:-1]).sum(1)).mean()
+            output_data = np.concatenate(list(images_data))
+            output_data = output_data.transpose(*range(2, 4 - vec_dim), 0, *range(4 - vec_dim, output_data.ndim), 1)
+            spacing = spacing[:output_data.ndim-2] + (spacing_z,) + spacing[output_data.ndim-1:]
+        output_image = sitk.GetImageFromArray(output_data)
+        for t in basic_tags: output_image.SetMetaData(t, self.basics[t])
+        output_image.SetDirection(affine.flatten().tolist())
+        output_image.SetOrigin(images_origin[0])
+        output_image.SetSpacing(spacing)
+        return output_image
+    
+    def gather_multiple_components(self):
+        categories = {}
+        for sid in self.series_IDs:
+            segs = sid.split('.')
+            if len(segs) <= 10: continue
+            pid = '.'.join(segs[:10])
+            categories.setdefault(pid, [])
+            categories[pid].append(sid)
+        for pid in categories:
+            if len(categories[pid]) <= 1: continue
+            images = []
+            for sid in sorted(categories[pid], key=lambda x: tuple(map(eval, x.split('.')))):
+                images.append(self.images.pop(sid))
+                if pid not in self.series_IDs:
+                    self.series_infos[pid] = self.series_infos[sid]
+                    self.series_IDs.append(pid)
+                self.series_IDs.remove(sid)
+            self.images[pid] = self._compose(images)
+            self.series_infos[pid]['Shape'] = self.images[pid].GetSize()
+        self.series_IDs.sort(key=lambda x: tuple(map(eval, x.split('.'))))
+    
+    def bundle(self):
+        if self.has_series: ref_file = self.file_lists[0][0]
+        ref_file = self.file_list[0]
+        
+        with run("NII"), run.use_tag:
+            if self.ftype.upper() == 'NII': return nib.load(ref_file).header
+        
+        with run("DCM"), run.use_tag:
+            if self.ftype.upper() == 'DCM': return dcm.dcmread(ref_file)
+
+    def save_as_dtype(self, dtype: bt.dtype, path: (str, callable), as_type=None):
+        if isinstance(dtype, str): dtype = getattr(bt, dtype)
+        if self.has_series:
+            img = self.copy()
+            for sid in img.series_IDs:
+                image_data = np.array(sitk.GetArrayFromImage(img.images[sid]))
+                array = bt.tensor(toI(image_data)).type(dtype)
+                old_image = img.images[sid]
+                new_image = sitk.GetImageFromArray(array)
+                new_image.SetDirection(old_image.GetDirection())
+                new_image.SetSpacing(old_image.GetSpacing())
+                new_image.SetOrigin(old_image.GetOrigin())
+                img.images[sid] = new_image
+            img.save(path, as_type=as_type)
+        else:
+            img = self.copy()
+            image_data = np.array(sitk.GetArrayFromImage(img.image))
+            array = bt.tensor(toI(image_data)).type(dtype)
+            old_image = img.image
+            new_image = sitk.GetImageFromArray(array)
+            new_image.SetDirection(old_image.GetDirection())
+            new_image.SetSpacing(old_image.GetSpacing())
+            new_image.SetOrigin(old_image.GetOrigin())
+            img.image = new_image
+            img.save(path, as_type=as_type)
+
+    @overload
+    def save(self, data: bt.Tensor, path: (str, callable), as_type=None, **header):
+        img = self.copy()
+        img.from_array(data)
+        for k, v in header.items():
+            if not hasattr(img, k): continue
+            setattr(img, k, v)
+        img.save(path, as_type=as_type)
+
+    @overload
+    def save(self, img: 'IMG', path: (str, callable), as_type=None, **header):
+        old_values = {}
+        for k, v in header.items():
+            if not hasattr(img, k): continue
+            old_values[k] = getattr(img, k)
+            setattr(img, k, v)
+        img.save(path, as_type=as_type)
+        for k, v in old_values.items(): setattr(img, k, v)
+
+    @overload
+    def save(self, trans: 'Transformation', path: (str, callable), as_type=None):
+        img = self.copy()
+        img.from_array(trans.toDDF(self.shape).squeeze())
+        for k, v in header.items():
+            if not hasattr(img, k): continue
+            setattr(img, k, v)
+        img.save(path, as_type=as_type)
+
+    @overload
+    def save(self, trans_file: 'TRS', path: (str, callable), as_type=None):
+        img = self.copy()
+        img.from_array(trans_file.trans.toDDF(self.shape).squeeze())
+        for k, v in header.items():
+            if not hasattr(img, k): continue
+            setattr(img, k, v)
+        img.save(path, as_type=as_type)
+
+    @overload
+    def save(self, path: (str, callable), as_type=None):
+        if as_type is None:
+            ftype_out = self.ftype
+            if isinstance(path, str):
+                with run(sitk_supported_modalities), run.any_tag:
+                    ftype_out_list = [t for e, t in sitk_modality_exts.items() if path.endswith(e)]
+                    if len(ftype_out_list) == 1: ftype_out = ftype_out_list[0]
+                with run("DCM"), run.use_tag:
+                    if isinstance(path, str) and (path.endswith('.dcm') or path.endswith('.ima')): ftype_out = 'DCM'
+        else: ftype_out = as_type
+        if ftype_out is None: raise Error("Unidentified")("Cannot save micomputing.IMG without identifing the `ftype`. ")
+
+        if self.has_series: ids = self.series_IDs; images = self.images; infos = self.series_infos
+        else: ids = [get_uid10()]; images = {ids[0]: self.image}; infos = {ids[0]: self.info}
+
+        def get_path(sid):
+            if callable(path): p = path(sid, infos)
+            elif isinstance(path, str): p = path
+            else: raise TypeError(f"Invalid saving path for micomputing.IMG: {path}.")
+            return p
+        isdir = lambda p: os.extsep not in os.path.basename(p) or len(os.path.basename(p).split(os.extsep)[-1]) > 6
+
+        with run(sitk_supported_modalities), run.any_tag:
+            if ftype_out.upper() in sitk_supported_modalities:
+                ext = sitk_default_exts[ftype_out.upper()]
+                used_path = []
+                for sid in ids:
+                    info = infos[sid]
+                    p = get_path(sid)
+                    if p is None: continue
+                    if isdir(p):
+                        if not os.path.exists(p): os.mkdir(p)
+                        if self.has_series:
+                            extra = info.copy()
+                            for k in IMG.basic_info: extra.pop(k)
+                            if len(extra) > 0: extra_str = ''.join([f"_{get_alphas(k)}{get_digits(str(v)) if get_digits(str(v)) else get_alphas(str(v))}" for k, v in extra.items()])
+                            else: extra_str = ''
+                            default_name = f"{info['SeriesTime']}_{info['SeriesDescription']}_{info['SeriesNumber']}{extra_str}{ext}"
+                            p = os.path.join(p, default_name)
+                        else: p = os.path.join(p, ext)
+                    if p in used_path: print(f"Warning: overwriting file {p} as a same path was given for multiple series. ")
+                    sitk.WriteImage(images[sid], p)
+                    used_path.append(p)
+        with run("DCM"), run.use_tag:
+            if ftype_out.upper() == 'DCM':
+                used_path = []
+                count = {}
+                for sid in ids:
+                    info = infos[sid]
+                    p = get_path(sid)
+                    if p is None: continue
+                    if isdir(p):
+                        if not os.path.exists(p): os.makedirs(p)
+                        if p not in used_path: count[p] = 1
+                        image = images[sid]
+                        slices = []
+                        ndim = image.GetDimension()
+                        if ndim == 3:
+                            for z in range(image.GetDepth()):
+                                slices.append(image[:, :, z])
+                        elif ndim == 2:
+                            slices.append(image)
+                        series_writer = sitk.ImageFileWriter()
+                        series_writer.KeepOriginalImageUIDOn()
+                        aff = self.affine_of(image)
+                        orientation = np.array(image.GetDirection()).reshape((ndim, ndim)).T.flatten()[:ndim * (ndim - 1)].tolist()
+                        origin = list(image.GetOrigin())[:2]
+                        spacing = list(image.GetSpacing())
+                        for z, image_slice in enumerate(slices):
+                            slice_loc = (aff @ np.array([[0], [0], [z], [1]]))[2, 0]
+                            for t, v in basic_tags.items(): image_slice.SetMetaData(t, self.basics.get(t, v))
+                            image_slice.SetMetaData("0020|0013", str(z+1))
+                            image_slice.SetMetaData("0020|1041", str(-slice_loc))
+                            image_slice.SetMetaData("0020|000e", sid)
+                            image_slice.SetMetaData("0008|0021", cdate())
+                            image_slice.SetMetaData("0008|0031", cmilitime())
+                            image_slice.SetMetaData("0008|0012", cdate())
+                            image_slice.SetMetaData("0008|0013", cmilitime())
+                            image_slice.SetMetaData("0020|0011", str(info.get('SeriesNumber', '1')))
+                            image_slice.SetMetaData("0008|103e", info.get('SeriesDescription', ''))
+                            file_path = os.path.join(p, "slice%04d.dcm"%count[p])
+                            series_writer.SetFileName(file_path)
+                            series_writer.Execute(image_slice)
+                            with dcm.dcmread(file_path) as image_again:
+                                image_again.ImagePositionPatient = origin + [slice_loc] # 0020|0032
+                                image_again.ImageOrientationPatient = orientation # 0020|0037
+                                image_again.PixelSpacing = spacing[:2] # 0020|0030
+                                image_again.SpacingBetweenSlices = str(spacing[-1]) # 0018|0088
+                                image_again.SliceThickness = str(float(int(spacing[-1] - 0.1))) # 0018|0050
+                                image_again.ImageType = ['DERIVED'] # 0008|0008
+                                image_again.PatientSize = '200' # 0010|1020
+                                image_again.save_as(file_path)
+                            count[p] += 1
+                        used_path.append(p)
+                    else: raise TypeError("Please identify a directory when saving a DICOM format micomputing.IMG. ")
+        with run("PNG"), run.use_tag:
+            if ftype_out.upper() == 'PNG':
+                used_path = []
+                count = {}
+                for sid in ids:
+                    info = infos[sid]
+                    p = get_path(sid)
+                    if p is None: continue
+                    if isdir(p):
+                        if not os.path.exists(p): os.mkdir(p)
+                        if p not in used_path: count[p] = 0
+                        image = images[sid]
+                        image = sitk.Cast(sitk.RescaleIntensity(image), sitk.sitkUInt8)
+                        file_names = [os.path.join(p, "slice%04d.png"%(count[p] + z)) for z in range(image.GetDepth())]
+                        count[p] += image.GetDepth()
+                        series_writer = sitk.ImageSeriesWriter()
+                        series_writer.SetFileNames(file_names)
+                        series_writer.Execute(image)
+                        used_path.append(p)
+                    else: raise TypeError("Please identify a directory when saving a DICOM format micomputing.IMG. ")
+                    

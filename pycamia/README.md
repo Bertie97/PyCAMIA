@@ -43,7 +43,7 @@ This package cope with str objects.
 This package cope with list objects. More useful functions will be added to it in the future. 
 1. Use `argmin(list, domain)` to find the indices for the minimal value in list. The function only search in the indices `domain`. A list is output as there may be multiple entries. 
 2. Use `argmax` to find the indices for the maximal value, similar to `argmin`. 
-3. Use `flat_list` to unwrap the list elements to create a list with no element in type `list`. 
+3. Use `flatten_list` to unwrap the list elements to create a list with no element in type `list`. 
 4. Use `prod` to obtain the product of all numbers in the list. 
 5. Use `item` to fetch the only element in the list. An error will be raised if there isn't any or are more than 1 elements. 
 
@@ -74,7 +74,6 @@ This package handles exceptions.
 This package manipulates the input/output. Currently, it only deal with print. Shell handler or other inout functions will be added here in the future. 
 1. Use `with no_print:` to suppress the console output. Although not recommended, one can use `with no_print as out_stream:` and `output = str(out_stream)` inside the `with` structure to fetch the output. 
 2. Use `sprint = SPrint()` to create a function `sprint` that collects the printed text. Use `out = sprint()` or `sprint.text` to get the results.
-3. Use `str_print.clear()` to erase the text inside `str_print` and `str_print(output)` to print to this string. It is an instance alias of `Sprint`. 
 
 ## Package `timing`
 
@@ -84,7 +83,7 @@ This package use the time spent of commands to perform useful inspection or orga
 3. Use `with scope("name"):` to nest a series of commands. It is an alias of `Timer`. 
 4. Use `with scope("name"), jump:` to jump a series of commands. 
 5. Use `with scope("name"), Jump(False):` to disable the jump.
-6. Use `wf = Workflow("step1", "step2")` and `with wf("step1(2)"), wf.jump:` before commands of "step1(2)" to create a workflow. One can change the arguments in the init function to decide which steps to run. 
+6. Use `wf = Workflow("step1", "step2")` and `with wf("step1(2)"), wf.use_tag:` before commands of "step1(2)" to create a workflow. One can change the arguments in the init function to decide which steps to run. 
 7. Use `@periodic(seconds, max_repeat)` to run a function repeatedly. 
 
 ## Package `more`

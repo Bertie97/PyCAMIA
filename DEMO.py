@@ -2,9 +2,9 @@
 ## Change the arguments of `Workflow` for variable `demo` to test different packages. 
 if __name__ != "__main__": exit()
 from pycamia import Workflow
-demo = Workflow("pycamia")
+demo = Workflow()
 
-with demo("pyoverload"), demo.jump:
+with demo("pyoverload"), demo.use_tag:
 
     from pyoverload import *
     print(isoftype({'a': 2, '3': 43}, Dict[str:int]))
@@ -37,7 +37,7 @@ with demo("pyoverload"), demo.jump:
         def __init__(self, numerator: Real, denominator: Real):
             if isint(numerator) and isint(denominator):
                 self.__init__numdenint(rint(numerator), rint(denominator))
-            else: self.__init__float(numerator / denominator)
+            else: self.__initrefat(numerator / denominator)
 
         @overload
         def __init__(self, string: str):
@@ -91,7 +91,7 @@ with demo("pyoverload"), demo.jump:
     print(rat(126/270) + rat(25, 14))
     print(rat(126, 270) * rat(25, 14))
 
-with demo("pycamia"), demo.jump:
+with demo("info_manager"), demo.use_tag:
     from pycamia import enclosed_object, info_manager
     code = """
 from .manager import info_manager
@@ -117,12 +117,99 @@ from .functions import *
     info = info_manager.parse(info_str).check()
     info.x = "hello"
     print(info)
-    
-    from pycamia import flat_list
-    print(flat_list([0, 2, [1, 4, 2], [1, 3, 4]]))
+
+with demo("pycamia"), demo.use_tag:
+    from pycamia import flatten_list
+    print(flatten_list([0, 2, [1, 4, 2], [1, 3, 4]]))
     
     from pycamia import touch
     a = 1
     print(touch("a"))
     
-with demo(""), demo.jump: pass
+    from pycamia import alias
+    @alias("func_a", b=1)
+    @alias("func_c", b=2)
+    def func_b(x, b):
+        print(x+b)
+    
+    func_a(1)
+    func_b(2, 4)
+    func_c(7)
+    
+    class A:
+        @alias('x', 'a', 'b')
+        @property
+        def y(self): return '1'
+    
+    a = A()
+    print(a.x)
+    print(a.y)
+    print(a.a)
+    print(a.b)
+    
+    def compose(f, g):
+        return lambda x: f(g(x))
+    print(compose(alias("square")(lambda x: x**2), square)(3))
+    
+    from pycamia import Path, curdir, pardir, copy
+    Path(curdir, ref=pardir).cmd('ls {}; pwd')
+    print(Path(curdir).size())
+
+with demo("environ"), demo.use_tag:
+    from pycamia import get_args_expression, get_declaration
+    def image_grid(x):
+        return 2
+    def f(x):
+        print(get_args_expression())
+    def get_declaration(f):
+        with open(f.__code__.co_filename) as fp:
+            for _ in range(f.__code__.co_firstlineno-1): fp.readline()
+            l = fp.readline()
+            print(l)
+    get_declaration(f)
+
+with demo("batorch"), demo.use_tag:
+    # Deprecated: 2023-09
+    import batorch as bt
+    import numpy as np
+    from pyoverload import overload, Array
+    from pycamia import restore_type_wrapper, get_declaration
+
+    @overload
+    # @restore_type_wrapper
+    def image_grid(x: Array):
+        return image_grid(x.space)
+
+    @overload
+    def image_grid__default__(*shape):
+        if len(shape) == 1 and isinstance(shape[0], (list, tuple)): shape = shape[0]
+        a, b = map(int, bt.torch.__version__.split('+')[0].split('.')[:2])
+        kwargs = {'indexing': 'ij'} if (a, b) >= (1, 10) else {}
+        return bt.stack(bt.meshgrid(*[bt.arange(x) for x in shape], **kwargs), {})
+    print(get_declaration(image_grid))
+    # t = bt.Tensor(np.zeros((3, 4, 3)), batch_dim=1)
+    # print(t, t.shape)
+    # a = bt.zeros(3, [4], 5, {2}, 7)
+    # a.c_dim = -1
+    # print(bt.zeros([2], {4}, 3, 5).split(2, {}))
+    # print(a.standard().shape)
+    # a = bt.rand([2], 3, 3)
+    # b = bt.rand([2], 3)
+    # print(a @ b)
+    # print(bt.zeros([3]).unsqueeze(-2))
+    
+with demo("micomputing"), demo.use_tag:
+    from micomputing import metric
+    
+with demo("batorch2"), demo.use_tag:
+    from batorch import tensor2 as bt
+    print(bt.zeros({2}, 3))
+    print(bt.zeros({2}, 3) + 1, bt.zeros({2}, 3) + 1 == bt.ones({2}, 3))
+    print(bt.rand({3}, [4], 2, 1).squeeze(-1))
+
+with demo("iterate"), demo.use_tag: 
+    from pycamia import iterate
+    for i in iterate(100):
+        for _ in range(100000): i+_
+        print(i)
+        

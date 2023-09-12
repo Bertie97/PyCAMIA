@@ -15,15 +15,16 @@ __all__ = """
     identity_function
 """.split()
 
-def empty_function(*args, **kwargs): pass
-# Just an empty function, one can use it as a placeholder. 
+def empty_function(*args, **kwargs):
+    """ Just an empty function, one can use it as a placeholder. """
+    pass
 
 def const_function(a):
+    """Create a function that always returns `a`. """
     def f(*args, **kwargs): return a
     return f
-# Create a function that always returns `a`.
 
 def identity_function(*x):
+    """A funtion that returns the input, just as it was. """
     if len(x) == 1: return x[0]
     else: return x
-# A funtion that returns the input, just as it was.

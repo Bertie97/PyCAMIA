@@ -1,0 +1,27 @@
+ (Error Code: xxx)
+B241 // batorch: mismatch sizes need to be expanded to each other. 
+B242 // batorch: Wrong device type in 'bt.Tensor._make_subclass'. 
+B243 // batorch: Invalid dimension tag in 'bt.mergedims'. 
+B521 // batorch2.0: invalid size for 'bt.Size', element of invalid type in the init tuple. 
+B522 // batorch2.0: [Code error in initialization of 'bt.Size'] fail to get 'with_batch' to bool. 
+B523 // batorch2.0: [Code error in initialization of 'bt.Size'] fail to get 'n_sequence_dim' to integer. 
+B524 // batorch2.0: [Code error in initialization of 'bt.Size'] fail to get 'feature_range' to 2-element list. 
+B525 // batorch2.0: [Code error in initialization of 'bt.Size'] fail to get 'feature_range' of length 2. 
+B526 // batorch2.0: [Code error in initialization of 'bt.Size'] size with batch but also have feature range including 0. 
+B527 // batorch2.0: [Code error in inheriting __xor__ of 'bt.Size'] unable to unify batch. 
+B528 // batorch2.0: [Code error in inheriting __xor__ of 'bt.Size'] cannot convert sizes to those with the same left/right space. 
+B529 // batorch2.0: [Code error in inheriting __xor__ of 'bt.Size'] should be "batch in size 1, feature in size 2, or vice versa" but got otherwise. 
+B530 // batorch2.0: Not AutoDevice 'device' in initialization _make_subclass. 
+B531 // batorch2.0: No decorator is allowed for auto generated functions in batorch.tensor. 
+D651 // data: cannot open specific type of file, not implemented yet. 
+E001(*) // invalid stack: the stack should be printed. 
+E002(*) // environment: 'get_args_expression' cannot find function name in line. 
+E003(*) // environment: 'get_declaration' cannot find function name in line. 
+H121 // typehint: input of 'isitertype' should not return True in 'isatype'. 
+H122 // typehint.typings: Unrecognized detail_mode (elements|cells). 
+H123 // typehint.typings: array/tensor-like object without attr 'dtype'.
+T331 // transformation: 'axis' for 'Rigid' should have norm 1. If the algorithm requires differently, modification should be done. 
+T332 // transformation: auto-match of 'translation' and other params in 'Rigid' is wrong. 
+T333 // transformation: requires 1/4+D rigid transformation, new algorithm proposal. 
+T334 // transformation: requires 1/4+D rigid transformation, new algorithm proposal. In random init params.
+C388 // Collector having format for values never collected.

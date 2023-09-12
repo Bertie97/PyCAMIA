@@ -1,0 +1,3 @@
+graft micomputing/zxhtools
+include micomputing/micfunctions.so
+include micomputing/micfunctions.cpp
