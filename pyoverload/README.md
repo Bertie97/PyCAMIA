@@ -343,6 +343,18 @@ One can use the following expressions to identify more complicated types. Most o
 7. Compound operation: `'list<<int>>[10]'`. It is a `C-styled` expression which is equivalent to the subscriptions above except that the element type and size must be given together. e.g. `list<<int>>[10] = list[int][10]` or `dict<<(str, int)>>[] = dict[str:int]`. 
 8. Length operation: `len(list[10, 20]) = 200`. The built-in method `'len'` can obtain the size of iterative types. `-1` is returned for unspecific size. 
 
+###### `pyoverload.dtypes`
+
+`pyoverload` provides aliases for dtypes as well. Use the following import to find them,
+
+```python
+from pyoverload.dtypes import *
+```
+
+All available dtypes in `numpy` are available here, with those that didn't name after bits used followed by an `'_'`, i.e. use `short_` for short integers and `int16` without `'_'` for 16-bit integers. 
+
+The names of major data types, i.e. `'bool_'`, `'int_'`, `'float_'`, `'complex_'`, represent all the relevant datatypes. This is different from that in `PyTorch` (where `'int'` represents `'int32'`, etc.). 
+
 ##### Errors
 
 ###### `OverloadError`

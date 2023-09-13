@@ -10,6 +10,7 @@ __info__ = info_manager(
 __all__ = """
     raw_function
     decorator
+    get_environ_vars
 """.split()
 
 import os, sys

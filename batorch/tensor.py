@@ -32,7 +32,7 @@ from .device import GB, CPU, AutoDevice, FixedDevice
 
 with __info__:
     import torch
-    from pycamia import ByteSize
+    from pycamia import ByteSize, SPrint
     from pycamia import touch, avouch, alias, execblock
     from pycamia import get_alphas, arg_tuple, max_argmax
     from pycamia import argmax as _argmax, item, to_list
@@ -1641,6 +1641,19 @@ class Tensor(torch.Tensor):
     def __iter__(self):
         for i in RANGE(self.size(0)):
             yield self[i]
+            
+    def __repr__(self):
+        if self.size(0) > 4:
+            class_name = self.__class__.__name__
+            batch_dim = f"[{self.n_special}]+" if self.n_special > 0 else ''
+            xshape = str(self.shape).split('Size')[-1]
+            out = SPrint(f"<{batch_dim}{self.n_space}D Tensor on {self.device}: ")
+            out(f"shape={xshape}, type={self.type()}, requires_grad={self.requires_grad}>")
+            return out.text.rstrip('\n')
+        string = super().__repr__()
+        if 'shape=' not in string:
+            string = string.rstrip(')') + f', shape={self.shape})'
+        return string.replace("tensor", "Tensor")
 
     def __getattr__(self, key):
         if not self.init:
@@ -1761,11 +1774,11 @@ class Tensor(torch.Tensor):
     #    return super().__add__(other)
     #################################
 
-    def __repr__(self, *args, **kwargs):
-        string = super().__repr__(*args, **kwargs)
-        if 'shape=' not in string:
-            string = string.rstrip(')') + f', shape={self.shape})'
-        return string.replace("tensor", "Tensor")
+    # def __repr__(self, *args, **kwargs):
+    #     string = super().__repr__(*args, **kwargs)
+    #     if 'shape=' not in string:
+    #         string = string.rstrip(')') + f', shape={self.shape})'
+    #     return string.replace("tensor", "Tensor")
 
     def __str__(self, *args, **kwargs):
         string = super().__str__(*args, **kwargs)

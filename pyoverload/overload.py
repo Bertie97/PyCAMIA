@@ -36,6 +36,9 @@ from .typehint import typehint, decorator
 from .typehint import TypeHintError, HintTypeError, get_virtual_declaration
 from .typings import *
 
+with __info__:
+    from pycamia import Path
+
 class OverloadError(Exception): ...
 
 def wrapped(f):
@@ -67,7 +70,9 @@ class Overloader:
 
     @decorator
     def __register__(self, func):
-        var_name = (func.__func__ if isinstance(func, method) else func).__qualname__
+        wrapped_func = wrapped(func)
+        func_loc = Path(wrapped_func.__code__.co_filename)
+        var_name = '.'.join([func_loc.parent.name, func_loc.name, (wrapped_func.__func__ if isinstance(wrapped_func, method) else wrapped_func).__name__])
         if var_name.endswith('._'):
             if self.prev_var_name is None:
                 raise NameError("Cannot use '_' as a function name of the first @overload.")
@@ -81,7 +86,7 @@ class Overloader:
             parts_ = var_name.split('_')
             if len(parts_) >= 3 and parts_[-2] and not parts_[-1]: var_name_candidates.extend(['_'.join(parts_[:-2] + ['']), '_'.join(parts_[:-2])])
         
-        if not func.__name__.endswith(':typehint'): func = typehint(func, check_return=True)
+        if not ':typehint' in func.__name__: func = typehint(func, check_return=True)
         func_index = None
         for v in var_name_candidates:
             if v in self.funcset_collected:
@@ -93,6 +98,7 @@ class Overloader:
             if var_name.endswith('__default__'): var_name = var_name[:-len('__default__')]
             elif var_name.endswith('__0__'): var_name = var_name[:-len('__0__')]
             self.funcset_collected[var_name] = [func]
+        self.prev_var_name = var_name
         @wraps(func)
         def wrapper(*args, **kwargs):
             return self.__call__(*args, __cur__func__ = (var_name, func_index), **kwargs)
@@ -100,7 +106,14 @@ class Overloader:
 
     def __call__(self, *args, __cur__func__=None, **kwargs):
         if len(args) == 1 and not kwargs and not __cur__func__ and isinstance(args[0], callable):
-            return self.__register__(args[0])
+            outer_func = self.__register__(args[0])
+            var_name = self.prev_var_name
+            declarations = '\n            '.join([get_virtual_declaration(wrapped(f)) for f in self.funcset_collected[var_name]])
+            outer_func.__doc__ = f"""
+            registered function at: '{var_name}', with the following usages:
+            {declarations}
+            """
+            return outer_func
         if __cur__func__ is None: raise TypeError("Invalid @overload sub-function without keyword argument '__cur__func__'")
         if __cur__func__[1] is not None:
             # direct call

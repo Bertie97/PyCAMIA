@@ -119,7 +119,7 @@ def image_grid(*shape):
 
 @overload
 @restore_type_wrapper("roi")
-def crop_as(x: array, y: (tuple, list), center: (tuple, null)=None, n_keepdim: int=0, fill: scalar=0):
+def crop_as(x: array, y: (tuple, list), center: (tuple, null)=None, n_keepdim: int=0, fill: number=0):
     x = torch_tensor(x)
     size_x = x.shape
     size_y = (-1,) * n_keepdim + tuple(y)
@@ -146,11 +146,11 @@ def crop_as(x: array, y: (tuple, list), center: (tuple, null)=None, n_keepdim: i
     return z
 
 @overload
-def crop_as(x: array, y: array, center: tuple, fill: scalar=0):
+def crop_as(x: array, y: array, center: tuple, fill: number=0):
     return crop_as(x, y.shape, center, fill)
 
 @overload
-def crop_as(x: array, y: union(tuple, list, array), fill: scalar=0):
+def crop_as(x: array, y: union(tuple, list, array), fill: number=0):
     center = tuple(m/2 for m in x.shape)
     return crop_as(x, y, center, fill)
 

@@ -235,7 +235,7 @@ def grad_image(array, dx=1, pad=False):
 
 @overload
 @restore_type_wrapper("roi")
-def crop_as(x: array, y: tuple, center: tuple, fill: scalar=0) -> array:
+def crop_as(x: array, y: tuple, center: tuple, fill: number=0) -> array:
     x = batorch_tensor(x)
     size_x = x.shape
     size_y = y
@@ -272,11 +272,11 @@ def crop_as(x: array, y: tuple, center: tuple, fill: scalar=0) -> array:
     return z
 
 @overload
-def crop_as(x: array, y: array, center: tuple, fill: scalar=0) -> array:
+def crop_as(x: array, y: array, center: tuple, fill: number=0) -> array:
     return crop_as(x, y.shape, center, fill)
 
 @overload
-def crop_as(x: array, y: union(tuple, array), fill: scalar=0) -> array:
+def crop_as(x: array, y: union(tuple, array), fill: number=0) -> array:
     center = tuple(m/2 for m in x.shape)
     return crop_as(x, y, center, fill)
 

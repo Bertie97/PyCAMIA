@@ -29,9 +29,10 @@ __all__ = """
     
     object
     bool
-    int
     short
+    int
     long
+    half
     float
     double
     rational
@@ -85,9 +86,9 @@ with __info__:
 
 ### >>> basic type functions <<< ###
 
-def _touch(f):
+def _touch(f, d=None):
     try: return f()
-    except Exception: ...
+    except Exception: return d
 
 def as_type(t: (type, tuple, str, None)):
     if isinstance(t, builtins.type): return t
@@ -217,7 +218,8 @@ class type(builtins.type):
         if '__instancecheck__' in self.properties: return self.properties['__instancecheck__'](self, x)
         if '__subclasscheck__' in self.properties: return self.properties['__subclasscheck__'](self, x.__class__)
         dtype_correct = False
-        if hasattr(x, 'shape') and hasattr(x, 'dtype') and len(x.shape) == 0: dtype_correct = issubclass(dtype(x.dtype), dtype(getattr(self, '__dtype__', self)))
+        if not isinstance(x, builtins.type) and hasattr(x, 'shape') and hasattr(x, 'dtype') and len(x.shape) == 0:
+            dtype_correct = issubclass(dtype(x.dtype), dtype(getattr(self, '__dtype__', self)))
         if self.parent is not None: return isinstance(x, self.parent) or x.__class__ == self or dtype_correct
         else: return dtype_correct
         return self in x.__class__.__mro__
@@ -270,10 +272,10 @@ def create_spec_dtype(self, arg):
     elif isinstance(_dtype, str): ...
     else: _dtype = str(_dtype)
     
-    type_infos = re.findall(r"([a-zA-Z]+)([0-9]*)", _dtype.split('.')[-1])
+    type_infos = re.findall(r"([<a-zA-Z]+)([x0-9]*)", _dtype.split('.')[-1])
     avouch(len(type_infos) == 1, TypeError(f"Unrecognized dtype '{_dtype}'"))
     name, bits = type_infos[0]
-    bits = int(bits) if bits else None
+    bits = _touch(lambda: int(bits), bits)
     
     if name == 'long':
         avouch(bits is None, TypeError(f"Unrecognized dtype '{arg}': {name}{bits}"))
@@ -508,57 +510,6 @@ def instance_satisfies(func):
         __instancecheck__ = lambda _, x: func(x)
     )
 
-### >>> basic element objects <<< ###
-
-object = type("object", builtins.object)
-bool = type("bool", builtins.int, parent = builtins.bool)
-int = type("int", builtins.int)
-short = type("long", builtins.int, __dtype__ = 'int16')
-long = type("long", builtins.int, __dtype__ = 'int64')
-float = type("float", builtins.float)
-double = type("double", builtins.float, __dtype__ = 'float64')
-rational = type("rational", float) # not carefully implemented yet
-real = type("real", parent = union(int, float))
-complex = type("complex", builtins.complex)
-number = type("number", parent = union(rational, real, complex))
-
-property = type("property", builtins.property)
-slice = type("slice", parent = builtins.slice)
-null = type("null", parent = builtins.type(None))
-
-### >>> functions and methods <<< ###
-
-callable = instance_satisfies(builtins.callable)
-functional = type("functional",
-    __call__ = lambda _, x: not isinstance(x, builtins.type) and hasattr(x, '__call__'),
-    __subclasshook__ = lambda _, t: isinstance(t, builtins.type) and not issubclass(t, builtins.type) and hasattr(t, '__call__')
-)
-lambda_ = lambda_func = type("lambda", parent = (lambda:...).__class__)
-method = type("method", parent = __info__.__enter__.__class__)
-function = type("function", parent = avoid.__str__.__class__)
-builtin_function_or_method = type("builtin_function_or_method", parent = builtins.int.__new__.__class__)
-method_descriptor = type("method_descriptor", parent = builtins.int.to_bytes.__class__)
-method_wrapper = type("method_wrapper", parent = ''.__str__.__class__)
-def __is_generator_func__(_, func):
-    while hasattr(func, '__wrapped__'): func = func.__wrapped__
-    return func.__code__.co_flags &0x20
-generator_function = type("generator_function", functional, 
-    __instancecheck__ = __is_generator_func__
-)
-classmethod = type("classmethod", builtins.classmethod)
-staticmethod = type("staticmethod", builtins.staticmethod)
-
-### >>> fixed element sequences <<< ###
-
-str = type("str", builtins.str)
-bytes = type("bytes", builtins.bytes)
-bytearray = type("bytearray", builtins.bytearray)
-memoryview = type("memoryview", parent = builtins.memoryview)
-map = type("map", builtins.map)
-filter = type("filter", builtins.filter)
-
-### >>> array or sequences <<< ###
-
 def __array_getitem__(self, index):
     """
     'array' is defined by subscripts ['type', element type such as 'dtype' and 'shape'].
@@ -597,6 +548,59 @@ array = type("array",
     __subclasshook__ = lambda _, t: isinstance(t, builtins.type) and hasattr(t, 'shape') and hasattr(t, 'dtype')
 )
 
+### >>> basic element objects <<< ###
+
+object = type("object", builtins.object)
+bool = type("bool", builtins.int, parent = builtins.bool)
+int = type("int", builtins.int)
+short = type("short", builtins.int, __dtype__ = 'int16')
+long = type("long", builtins.int, __dtype__ = 'int64')
+float = type("float", builtins.float)
+half = type("half", builtins.int, __dtype__ = 'float16')
+double = type("double", builtins.float, __dtype__ = 'float64')
+rational = type("rational", float) # not carefully implemented yet
+real = type("real", parent = union(int, float), op_type = 'union', types = [int, float])
+complex = type("complex", builtins.complex)
+scalar = type("scalar", parent = ArrayType('scalar', array, base_type=None, base_size=builtins.tuple()))
+number = type("number", parent = union(scalar, real, complex, rational), op_type = 'union', types = [scalar, real, complex, rational])
+
+property = type("property", builtins.property)
+slice = type("slice", parent = builtins.slice)
+null = type("null", parent = builtins.type(None))
+
+### >>> functions and methods <<< ###
+
+callable = instance_satisfies(builtins.callable)
+functional = type("functional",
+    __call__ = lambda _, x: not isinstance(x, builtins.type) and hasattr(x, '__call__'),
+    __subclasshook__ = lambda _, t: isinstance(t, builtins.type) and not issubclass(t, builtins.type) and hasattr(t, '__call__')
+)
+lambda_ = lambda_func = type("lambda", parent = (lambda:...).__class__)
+method = type("method", parent = __info__.__enter__.__class__)
+function = type("function", parent = avoid.__str__.__class__)
+builtin_function_or_method = type("builtin_function_or_method", parent = builtins.int.__new__.__class__)
+method_descriptor = type("method_descriptor", parent = builtins.int.to_bytes.__class__)
+method_wrapper = type("method_wrapper", parent = ''.__str__.__class__)
+def __is_generator_func__(_, func):
+    while hasattr(func, '__wrapped__'): func = func.__wrapped__
+    return func.__code__.co_flags &0x20
+generator_function = type("generator_function", functional, 
+    __instancecheck__ = __is_generator_func__
+)
+classmethod = type("classmethod", builtins.classmethod)
+staticmethod = type("staticmethod", builtins.staticmethod)
+
+### >>> fixed element sequences <<< ###
+
+str = type("str", builtins.str)
+bytes = type("bytes", builtins.bytes)
+bytearray = type("bytearray", builtins.bytearray)
+memoryview = type("memoryview", parent = builtins.memoryview)
+map = type("map", builtins.map)
+filter = type("filter", builtins.filter)
+
+### >>> array or sequences <<< ###
+
 iterable = type("iterable", 
     is_iterable = True,
     __call__ = lambda _, x: hasattr(x, '__iter__') or hasattr(x, '__len__') or hasattr(x, '__getitem__'),
@@ -621,8 +625,6 @@ range = type("range", parent = builtins.range, is_iterable = True)
 generator = type("generator", parent = (_ for _ in []).__class__, is_iterable = True)
 zip = type("zip", builtins.zip, is_iterable = True)
 enumerate = type("enumerate", builtins.enumerate, is_iterable = True)
-
-scalar = type("scalar", parent = ArrayType('scalar', array, base_type=None, base_size=builtins.tuple()))
 
 if __name__ == "__main__":
     ...
