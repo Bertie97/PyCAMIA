@@ -16,6 +16,7 @@ __all__ = """
     TypeHintError
     HintTypeError
     
+    get_func_info
     get_arg_values
     get_virtual_declaration
     
@@ -42,8 +43,8 @@ def decorator(wrapper_func):
     if not isinstance(wrapper_func, functional):
         raise TypeError(f"@decorator wrapping a non-wrapper: {wrapper_func.__qualname__}")
     def wrapper(*args, **kwargs):
-        if len(args) == 1 and isinstance(args[0], functional) or \
-            len(args) == 2 and isinstance(args[1], functional):
+        if (len(args) == 1 and isinstance(args[0], functional) or # functions
+            len(args) == 2 and isinstance(args[1], functional)): # methods
             func = args[-1]
             raw_func = func.__func__ if isinstance(func, method) else func
             raw_func = getattr(raw_func, '__wrapped__', raw_func)
@@ -229,8 +230,6 @@ def match_and_check(func_info: tuple, annotations: list, *args, **kwargs):
     ) = func_info
     
     n_args = len(args)
-    if f_name == 'save':
-        ...
     
     for i, v, a in zip(range(co_nonvarargcount), f_varnames, annotations):
         
@@ -248,9 +247,6 @@ def match_and_check(func_info: tuple, annotations: list, *args, **kwargs):
                 raise HintTypeError(f"{f_name}() got multiple values for argument '{v}'")
             if value is None:
                 value = f_kwdefaults[v] if co_argcount <= i else (args[i] if i < n_args else f_defaults[i - co_argcount + n_defaults])
-            if not isinstance(value, a):
-                raise TypeHintError(f"{f_name}() needs argument '{v}' of type {get_annot(a)}, but got {repr(value)} of type {get_annot(value.__class__)}")
-            continue
         except IndexError:
             missing_args = f_varnames[n_args:co_argcount - n_defaults]
             n_missing = len(missing_args)
@@ -263,6 +259,19 @@ def match_and_check(func_info: tuple, annotations: list, *args, **kwargs):
             missing_args_str = ', '.join([repr(x) for x in missing_args[:-1]])
             missing_args_str += (' and ' if missing_args_str else '') + repr(missing_args[-1])
             raise HintTypeError(f"{f_name}() missing {n_missing} required keyword-only argument{'s' if n_missing > 1 else ''}: {missing_args_str}")
+        except Exception as error:
+            f_varnames = list(f_varnames)
+            var_names = f_varnames[:co_posonlyargcount] + ['/'] + f_varnames[co_posonlyargcount:co_argcount]
+            var_names += ['*' + ('' if not has_args else f_varnames[co_nonvarargcount])]
+            var_names += f_varnames[co_argcount:co_nonvarargcount]
+            if has_kwargs: var_names += ['**' + f_varnames[co_nonvarargcount + has_args]]
+            i = f_varnames.index(v)
+            var_names[i] = var_names[i] + ': ' + get_annot(a) + ' = ' + repr(value)
+            args_str = ', '.join(var_names)
+            raise error.__class__(f"In checking {f_name}({args_str}): " + error.__str__())
+        if not isinstance(value, a):
+            raise TypeHintError(f"{f_name}() needs argument '{v}' of type {get_annot(a)}, but got {repr(value)} of type {get_annot(value.__class__)}")
+        continue
 
     if has_args:
         a = annotations[co_nonvarargcount]

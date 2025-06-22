@@ -108,10 +108,14 @@ class Overloader:
         if len(args) == 1 and not kwargs and not __cur__func__ and isinstance(args[0], callable):
             outer_func = self.__register__(args[0])
             var_name = self.prev_var_name
-            declarations = '\n            '.join([get_virtual_declaration(wrapped(f)) for f in self.funcset_collected[var_name]])
+            declarations = '\n    '.join([get_virtual_declaration(wrapped(f)) for f in self.funcset_collected[var_name]])
+            func_doc = [f.__doc__ for f in self.funcset_collected[var_name] if f.__doc__ is not None]
+            if func_doc: func_doc = func_doc[0]
+            else: func_doc = ''
             outer_func.__doc__ = f"""
-            registered function at: '{var_name}', with the following usages:
-            {declarations}
+@overload registered function at: '{var_name}', with the following usages:
+    {declarations}
+{func_doc}
             """
             return outer_func
         if __cur__func__ is None: raise TypeError("Invalid @overload sub-function without keyword argument '__cur__func__'")

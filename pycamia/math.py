@@ -13,7 +13,10 @@ __all__ = """
     GCD
     isint
     rational
+    factorial
 """.split()
+
+from .listop import prod
 
 def GCD(a, b):
     """
@@ -165,3 +168,5 @@ class rational:
 
     def __hash__(self): return self.value
 
+def factorial(i: int):
+    return prod(range(1, i+1))

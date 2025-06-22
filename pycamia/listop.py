@@ -11,6 +11,8 @@ __info__ = info_manager(
 
 __all__ = """
     prod
+    cumsum
+    cumprod
     cartesian_prod
     argmin
     argmax
@@ -30,36 +32,63 @@ __all__ = """
     arg_extract
     count
     unique
+    infinite_itemize
+    cat_generator
+    param_join
 """.split()
 
 from .exception import avouch, touch
 from typing import Iterable
 from random import randint
 
-def prod(*x):
+def prod(x, init=1):
     """
     Returns the product of elements, just like built-in function `sum`.
     
-    Example:
-    ----------
-    >>> prod([5, 2, 1, 4, 2])
-    80
+    Examples::
+        >>> prod([5, 2, 1, 4, 2])
+        80
     """
-    if len(x) == 1: x = x[0]
-    p = 1
     for i in x: 
         if hasattr(i, "__mul__") or hasattr(i, "__rmul__"):
-            p *= i
-    return p
+            init *= i
+    return init
+
+def cumsum(x, init=0):
+    """
+    Returns the cumulated sum of elements.
+    
+    Examples::
+        >>> cumsum([5, 2, 1, 4, 2], 0)
+        [5, 7, 8, 12, 14]
+    """
+    res = [init]
+    for i in x: 
+        if hasattr(i, "__add__") or hasattr(i, "__radd__"):
+            res.append(res[-1] + i)
+    return res[1:]
+
+def cumprod(x, init=1):
+    """
+    Returns the cumulated product of elements.
+    
+    Examples::
+        >>> cumsum([5, 2, 1, 4, 2], 2)
+        [10, 20, 20, 80, 160]
+    """
+    res = [init]
+    for i in x: 
+        if hasattr(i, "__mul__") or hasattr(i, "__rmul__"):
+            res.append(res[-1] * i)
+    return res[1:]
 
 def cartesian_prod(x, *y):
     """
     Returns the cartesian product of lists.
     
-    Example:
-    ----------
-    >>> cartesian_prod([1, 2], [3, 1], [1, 4, 2])
-    [[1, 3, 1], [1, 3, 4], [1, 3, 2], [1, 1, 1], [1, 1, 4], [1, 1, 2], [2, 3, 1], [2, 3, 4], [2, 3, 2], [2, 1, 1], [2, 1, 4], [2, 1, 2]]
+    Examples::
+        >>> cartesian_prod([1, 2], [3, 1], [1, 4, 2])
+        [[1, 3, 1], [1, 3, 4], [1, 3, 2], [1, 1, 1], [1, 1, 4], [1, 1, 2], [2, 3, 1], [2, 3, 4], [2, 3, 2], [2, 1, 1], [2, 1, 4], [2, 1, 2]]
     """
     if not isinstance(x, Iterable): x = [x]
     if len(y) == 0: return [[i] for i in x]
@@ -72,12 +101,13 @@ def argmin(y, x=None):
     """
     Find the indices of minimal element in `y` given index domain `x`.
     
-    Example:
-    ----------
-    >>> argmin([0, 2, 1, 4, 2], [1, 3, 4])
-    [1, 4]
+    Examples::
+        >>> argmin([0, 2, 1, 4, 2], [1, 3, 4])
+        [1, 4]
     """
-    if x is None: x = range(len(y))
+    if x is None:
+        if isinstance(y, dict): x = list(y.keys())
+        else: x = range(len(y))
     if len(x) <= 0: return []
     m = min([y[i] for i in x])
     return [i for i in x if y[i] == m]
@@ -86,12 +116,13 @@ def argmax(y, x=None):
     """
     Find the indices of maximal element in `y` given index domain `x`.
     
-    Example:
-    ----------
-    >>> argmin([0, 2, 1, 4, 2], [1, 3, 4])
-    [3]
+    Examples::
+        >>> argmin([0, 2, 1, 4, 2], [1, 3, 4])
+        [3]
     """
-    if x is None: x = range(len(y))
+    if x is None:
+        if isinstance(y, dict): x = list(y.keys())
+        else: x = range(len(y))
     if len(x) <= 0: return []
     m = max([y[i] for i in x])
     return [i for i in x if y[i] == m]
@@ -100,12 +131,13 @@ def min_argmin(y, x=None):
     """
     Find the minimal value as well as the indices in `y` given domain `x`.
     
-    Example:
-    ----------
-    >>> min_argmin([0, 2, 1, 4, 2], [1, 3, 4])
-    (2, [1, 4])
+    Examples::
+        >>> min_argmin([0, 2, 1, 4, 2], [1, 3, 4])
+        (2, [1, 4])
     """
-    if x is None: x = range(len(y))
+    if x is None:
+        if isinstance(y, dict): x = list(y.keys())
+        else: x = range(len(y))
     if len(x) <= 0: return None, []
     m = min([y[i] for i in x])
     return m, [i for i in x if y[i] == m]
@@ -114,12 +146,13 @@ def max_argmax(y, x=None):
     """
     Find the maximal value as well as the indices in `y` given domain `x`.
     
-    Example:
-    ----------
-    >>> argmin([0, 2, 1, 4, 2], [1, 3, 4])
-    (4, [3])
+    Examples::
+        >>> argmin([0, 2, 1, 4, 2], [1, 3, 4])
+        (4, [3])
     """
-    if x is None: x = range(len(y))
+    if x is None:
+        if isinstance(y, dict): x = list(y.keys())
+        else: x = range(len(y))
     if len(x) <= 0: return None, []
     m = max([y[i] for i in x])
     return m, [i for i in x if y[i] == m]
@@ -128,10 +161,9 @@ def kth_biggest(list_, k: int):
     """
     Find the k-th biggest element in the list.
     
-    Example:
-    ----------
-    >>> kth_biggest([0, 2, 1, 4, 2], 3)
-    2
+    Examples::
+        >>> kth_biggest([0, 2, 1, 4, 2], 3)
+        2
     """
     n = len(list_)
     avouch(k <= n, f"Cannot find the {k}-th element in a list of length {n}.")
@@ -159,10 +191,9 @@ def flatten_list(list_):
     """
     Flat the nested lists `list_`.
     
-    Example:
-    ----------
-    >>> flatten_list([0, 2, [1, 4, 2], [1, 3, 4]])
-    [0, 2, 1, 4, 2, 1, 3, 4]
+    Examples::
+        >>> flatten_list([0, 2, [1, 4, 2], [1, 3, 4]])
+        [0, 2, 1, 4, 2, 1, 3, 4]
     """
     # Deprecated realization of the function, as elements may be strings with characters '[' or ']'.
     # items = str(list_).replace('[', '').replace(']', '').split(',')
@@ -178,12 +209,11 @@ def item(list_):
     """
     Assert if the length of the list/tuple/set `list_` is not 1 and return the only element. 
     
-    Example:
-    ----------
-    >>> item([0])
-    0
-    >>> item([1,2])
-    AssertError: ...
+    Examples::
+        >>> item([0])
+        0
+        >>> item([1,2])
+        AssertError: ...
     """
     list_ = to_list(list_)
     avouch(len(list_) == 1, f"Failure in itemize as the length of {repr(list_)} is not 1. ")
@@ -193,16 +223,15 @@ def to_list(x, l = None):
     """
     Try to cast element `x` into a list
     
-    Example:
-    ----------
-    >>> to_list(1)
-    [1]
-    >>> to_list(0, 4)
-    [0, 0, 0, 0]
-    >>> to_list((1,2))
-    [1, 2]
-    >>> to_list((1,2), 4)
-    [1, 2, 1, 2]
+    Examples::
+        >>> to_list(1)
+        [1]
+        >>> to_list(0, 4)
+        [0, 0, 0, 0]
+        >>> to_list((1,2))
+        [1, 2]
+        >>> to_list((1,2), 4)
+        [1, 2, 1, 2]
     """
     func_candidates = ['tolist', 'to_list', 'aslist', 'as_list', '__list__']
     for fname in func_candidates:
@@ -218,16 +247,15 @@ def to_tuple(x, l = None):
     """
     Try to cast element `x` into a tuple of length `l`
     
-    Example:
-    ----------
-    >>> to_tuple(1)
-    (1,)
-    >>> to_tuple(0, 4)
-    (0, 0, 0, 0)
-    >>> to_tuple([1,2])
-    (1, 2)
-    >>> to_tuple([1,2], 4)
-    (1, 2, 1, 2)
+    Examples::
+        >>> to_tuple(1)
+        (1,)
+        >>> to_tuple(0, 4)
+        (0, 0, 0, 0)
+        >>> to_tuple([1,2])
+        (1, 2)
+        >>> to_tuple([1,2], 4)
+        (1, 2, 1, 2)
     """
     func_candidates = ['totuple', 'to_tuple', 'astuple', 'as_tuple', '__tuple__']
     for fname in func_candidates:
@@ -242,12 +270,11 @@ def to_set(x):
     """
     Try to cast element `x` into a set
     
-    Example:
-    ----------
-    >>> to_set(0)
-    {0}
-    >>> to_set([1,2])
-    {1,2}
+    Examples::
+        >>> to_set(0)
+        {0}
+        >>> to_set([1,2])
+        {1,2}
     """
     func_candidates = ['toset', 'to_set', 'asset', 'as_set', '__set__']
     for fname in func_candidates:
@@ -258,12 +285,11 @@ def map_ele(func, list_, index_ = None):
     """
     In-place! Map elements in `list_` at indices `index_` by function `func`. 
     
-    Example:
-    ----------
-    >>> map_ele(lambda x: x+1, [1,2], 1)
-    [1, 3]
-    >>> map_ele(to_list, [1,2,3,4], [1,2])
-    [1, [2], [3], 4]
+    Examples::
+        >>> map_ele(lambda x: x+1, [1,2], 1)
+        [1, 3]
+        >>> map_ele(to_list, [1,2,3,4], [1,2])
+        [1, [2], [3], 4]
     """
     if index_ is None: index_ = range(len(list_))
     if not index_: return list_
@@ -275,12 +301,11 @@ def sublist(list_: list, index_):
     """
     Return elements in `list_` at indices `index_`. 
     
-    Example:
-    ----------
-    >>> map_ele([1,2], [1])
-    [2]
-    >>> map_ele([1,2,3,4], [1,2])
-    [2, 3]
+    Examples::
+        >>> map_ele([1,2], [1])
+        [2]
+        >>> map_ele([1,2,3,4], [1,2])
+        [2, 3]
     """
     if isinstance(index_, slice): index_ = range(index_.start, index_.stop)
     return [list_[i] for i in index_]
@@ -291,39 +316,37 @@ def arg_extract(arg:tuple, arg_type=None):
     Set kwarg arg_type to define the types of objects that can be extracted. 
     By default, arg_type = None, which means any single element will be extracted. 
     
-    Example:
-    ----------
-    >>> def f(*args): print(args)
-    ... 
-    >>> f([1,2,3,4])
-    ([1, 2, 3, 4],)
-    >>> def f(*args): print(arg_tuple(args))
-    ... 
-    >>> f([1,2,3,4])
-    [1, 2, 3, 4]
+    Examples::
+        >>> def f(*args): print(args)
+        ... 
+        >>> f([1,2,3,4])
+        ([1, 2, 3, 4],)
+        >>> def f(*args): print(arg_extract(args))
+        ... 
+        >>> f([1,2,3,4])
+        [1, 2, 3, 4]
     """
     if len(arg) == 0: return ()
     if len(arg) > 1: arg = tuple(arg); return arg
-    if arg_type is None: arg = arg[0]
-    elif isinstance(arg_type, (tuple, list)):
-        if isinstance(arg[0], type(arg_type)): arg = arg[0]
-    elif isinstance(arg[0], arg_type): arg = arg[0]
+    if arg_type is None: return arg[0]
+    if not isinstance(arg_type, tuple): arg_type = (arg_type,)
+    arg_type = tuple(t if isinstance(t, type) else t.__class__ for t in arg_type)
+    if isinstance(arg[0], arg_type): arg = arg[0]
     return arg
 
 def arg_tuple(arg:tuple, no_list=False):
     """
     Return the raw tuple. 
     
-    Example:
-    ----------
-    >>> def f(*args): print(args)
-    ... 
-    >>> f([1,2,3,4])
-    ([1, 2, 3, 4],)
-    >>> def f(*args): print(arg_tuple(args))
-    ... 
-    >>> f([1,2,3,4])
-    (1, 2, 3, 4)
+    Examples::
+        >>> def f(*args): print(args)
+        ... 
+        >>> f([1,2,3,4])
+        ([1, 2, 3, 4],)
+        >>> def f(*args): print(arg_tuple(args))
+        ... 
+        >>> f([1,2,3,4])
+        (1, 2, 3, 4)
     """
     if len(arg) == 1 and isinstance(arg[0], tuple): arg = arg[0]
     if len(arg) == 1 and isinstance(arg[0], list) and not no_list: arg = arg[0]
@@ -334,10 +357,9 @@ def count(list_:list, filter):
     """
     Return number of elements in `list_` that satisfies `filter`. 
     
-    Example:
-    ----------
-    >>> count([1,2], lambda x: x > 1)
-    1
+    Examples::
+        >>> count([1,2], lambda x: x > 1)
+        1
     """
     count = 0
     for x in list_:
@@ -348,12 +370,35 @@ def unique(list_:list):
     """
     Return a list of unique element in `list_`
     
-    Example:
-    ----------
-    >>> count([1, 1, 3, 2])
-    [1, 3, 2]
+    Examples::
+        >>> count([1, 1, 3, 2])
+        [1, 3, 2]
     """
     ulist = []
     for x in list_:
         if x not in ulist: ulist.append(x)
     return ulist
+
+class infinite_itemize:
+    def __init__(self, obj, n=None):
+        if n is None or n < 0: n = None
+        self.obj = obj
+        self.num = n
+        
+    def __getitem__(self, i):
+        if self.num is None or -self.num <= i < self.num: return self.obj
+        raise IndexError("list index out of range")
+    
+    def __len__(self): return self.num
+    
+    def __str__(self): return f"infinite_itemize[{self.obj}]"
+    
+    @property
+    def is_infinite(self): return self.num is None
+
+def cat_generator(*gens):
+    for gen in gens:
+        for g in gen: yield g
+
+def param_join(*models):
+    return cat_generator(m.parameters() for m in models)

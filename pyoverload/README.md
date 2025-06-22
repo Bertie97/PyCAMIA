@@ -214,7 +214,7 @@ Needless to say, decorator `@overload` will add a `@typehint` type checker for f
 ...
 >>> func(1, 2, 3, 4)
 Traceback (most recent call last):
-  ...omitted...
+    [...omitted...]
 pyoverload.typehint.TypeHintError: func() needs argument 'c' of type check_instance_by_[callable], but got 3 of type int
 ```
 
@@ -240,7 +240,7 @@ Other usages of `@typehint` include:
 ...	
 >>> func(None, '', 1)
 Traceback (most recent call last):
-  ...omitted...
+    [...omitted...]
 pyoverload.typehint.TypeHintError: func() needs argument 'a' of type int, but got '' of type str
 ```
 
@@ -355,6 +355,34 @@ All available dtypes in `numpy` are available here, with those that didn't name 
 
 The names of major data types, i.e. `'bool_'`, `'int_'`, `'float_'`, `'complex_'`, represent all the relevant datatypes. This is different from that in `PyTorch` (where `'int'` represents `'int32'`, etc.). 
 
+##### Docstring
+
+`pyoverload` also provides all implementations as well as the docstring defined in the first implementation in the docstring of the overloaded function.
+
+```sh
+crop_as:__register__[...omitted...]
+    @overload registered function at: 'batorch.tensorfunc.crop_as', with the following usages:
+        crop_as(x: array, y: tuple, center: tuple, fill: number= 0, *) -> array
+        crop_as(x: array, y: array, center: tuple, fill: number= 0) -> array
+        crop_as(x: array, y: [tuple | array], fill: number= 0, *) -> array
+        crop_as(x: array, *y: int) -> array
+
+        crop an array `x` as the shape given by `y`.
+
+        Args:
+            x (array): The data to crop (or pad if the target shape is larger).
+                Note that only the space dimensions of the array are
+                cropped/padded by default.
+            y (array or tuple): The target shape in tuple or another array 
+            	to provide the target shape.
+            center (tuple, optional): The center of the target box. Defaults 
+            	to the center of x's shape.
+                Note: Do calculate the center w.r.t. input `x` if one is 
+                expanding the tensor, as `x`'s center coordinates in y-space 
+                is different from `y`'s center coordinates in x-space (which is correct).
+            fill (number, optional): The number to fill for paddings. Defaults to 0.
+```
+
 ##### Errors
 
 ###### `OverloadError`
@@ -373,7 +401,7 @@ When an overloaded function receives arguments that are not suitable for all imp
 ...
 >>> func(1.)
 Traceback (most recent call last):
-  ...omitted...
+    [...omitted...]
 pyoverload.overload.OverloadError: No func() matches arguments 1.0. All available usages are:
 func(x: int): [TypeHintError] func() needs argument 'x' of type int, but got 1.0 of type float
 func(x: str): [TypeHintError] func() needs argument 'x' of type str, but got 1.0 of type float

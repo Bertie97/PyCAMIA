@@ -16,7 +16,7 @@ __all__ = """
     get_type_name
     ArrayType
 
-    type class_ class_type
+    class_ class_type
     dtype
     union
     intersection intersect insct
@@ -80,7 +80,7 @@ __all__ = """
     enumerate
 """.split()
 
-import re, random, copy, builtins
+import re, sys, random, copy, builtins
 with __info__:
     from pycamia import alias, avouch, crashed
 
@@ -110,7 +110,7 @@ def get_type_name(x: (type, tuple, str, None)):
 
 @alias("class_", "class_type")
 class type(builtins.type):
-    
+
     @builtins.staticmethod
     def __new__(cls, *args, **kwargs):
         if len(args) == 1 and not kwargs: return args[0].__class__
@@ -123,7 +123,7 @@ class type(builtins.type):
         if not isinstance(bases, builtins.tuple):
             parent = bases
             bases = bases.__mro__
-        elif bases[-1] != builtins.object: bases = bases + (builtins.object,)
+        elif len(bases) == 0 or bases[-1] != builtins.object: bases = bases + (builtins.object,)
         if bases[0].__class__ != builtins.type: bases = (builtins.object,)
         # dict may have 'is_iterable' for iterability test.
         self = super().__new__(cls, t_name, bases, dict)
@@ -135,7 +135,7 @@ class type(builtins.type):
     
     def __init__(self, *args, **kwargs): ...
 
-    def __getitem__(self, index: (list, tuple[(type, slice, int, object)])) -> 'pyoverlaod.ArrayType':
+    def __getitem__(self, index: '(list, tuple[(type, slice, int, object)])') -> 'pyoverlaod.ArrayType':
         if self.locked: raise self.lock_error
         if '__getitem__' in self.properties: return self.properties['__getitem__'](self, index)
         if isinstance(index, builtins.list):
@@ -199,7 +199,8 @@ class type(builtins.type):
     def __rshift__(self, size):
         if self.locked:
             self.locked = False
-            return self[*size]
+            # return self[*size]
+            return self[size[0] if hatattr(size, '__len__') and len(size) == 1 else size]
         else: raise TypeError("ending tag '>>' before starting '<<'. ")
 
     def __invert__(self): return avoid(self)
@@ -242,13 +243,27 @@ class type(builtins.type):
         if self.parent is not None: return self.parent(*args, **kwargs)
         if len(self.__mro__) > 2: self.__mro__[1](*args, **kwargs)
         raise NotImplementedError(f"Trying to call type '{self.__name__}', no implementation is found.")
+    
+    def __eq__(self, other):
+        if not isinstance(other, builtins.type): return False
+        if len(self.__mro__) != len(other.__mro__): return False
+        return all(x.__qualname__ == y.__qualname__ for x, y in builtins.zip(self.__mro__[::-1], other.__mro__[::-1]))
+    
+    def __hash__(self):
+        return super().__hash__() if not hasattr(self, 'module') else hash(f"{self.module + '.' if self.module is not None else ''}{self.name}{self.bits}")
+    
+    def __setattr__(self, name, value):
+        builtins.type.__setattr__(self, name, value)
+        if name in ('module', 'name', 'bits', 'bytes'):
+            self.__name__ = f"dtype[{self.module + '.' if self.module is not None else ''}{self.name}{self.bits}]"
+            self.__qualname__ = '.'.join(self.__qualname__.split('.')[:-1] + [self.__name__])
 
 def create_spec_dtype(self, arg):
 
-    if hasattr(self, 'module'): raise TypeError(f"Specified '{self.__name__}' object is not callable")
+    if self.name: raise TypeError(f"Specified '{self.__name__}' object is not callable")
 
     if isinstance(arg, builtins.str):
-        module, *_, _dtype = arg.split('.')[0] if '.' in arg else [None, arg]
+        module, *_, _dtype = arg.split('.') if '.' in arg else [None, arg]
     elif isinstance(arg, builtins.type):
         if any(getattr(t, '__module__', '').startswith('pyoverload') for t in arg.__mro__):
             module = None
@@ -271,27 +286,21 @@ def create_spec_dtype(self, arg):
     elif hasattr(_dtype, 'name'): _dtype = _dtype.name
     elif isinstance(_dtype, str): ...
     else: _dtype = str(_dtype)
+    if _dtype.endswith('Tensor'): _dtype = _dtype[:-len('Tensor')].lower()
+    if not _dtype: return dtype
     
     type_infos = re.findall(r"([<a-zA-Z]+)([x0-9]*)", _dtype.split('.')[-1])
     avouch(len(type_infos) == 1, TypeError(f"Unrecognized dtype '{_dtype}'"))
     name, bits = type_infos[0]
     bits = _touch(lambda: int(bits), bits)
     
-    if name == 'long':
-        avouch(bits is None, TypeError(f"Unrecognized dtype '{arg}': {name}{bits}"))
-        name = 'int'
-        bits = 64
-    elif name == 'short':
-        avouch(bits is None, TypeError(f"Unrecognized dtype '{arg}': {name}{bits}"))
-        name = 'int'
-        bits = 16
-    elif name == 'double':
-        avouch(bits is None, TypeError(f"Unrecognized dtype '{arg}': {name}{bits}"))
-        name = 'float'
-        bits = 64
+    special_dict = builtins.dict(short=('int', 16), half=('float', 16), long=('int', 64), double=('float', 64))
+    if name in special_dict:
+        avouch(not bits, TypeError(f"Unrecognized dtype '{arg}': {name}{bits}"))
+        name, bits = special_dict[name]
 
-    return type.__new__(dtype, f"dtype[{module + '.' if module is not None else ''}{name}{bits if bits is not None else ''}]", 
-        module = module.split('.')[0] if module is not None else module, name = name, bits = bits
+    return type.__new__(dtype, f"dtype[{module + '.' if module is not None else ''}{name}{bits}]", 
+        module = module.split('.')[0] if module is not None else module, name = name, bits = bits, bytes=bits // 8 if isinstance(bits, int) else (bits + '/8' if isinstance(bits, str) else (bits, 8)), 
     )
 
 def __dtype_subclasscheck__(self, t):
@@ -301,6 +310,7 @@ def __dtype_subclasscheck__(self, t):
     return self.name in t.name
 
 dtype = type("dtype", type,
+    module = None, name = '', bits = 0, bytes = 0, 
     __call__ = create_spec_dtype,
     __instancecheck__ = lambda self, x: isinstance(x, scalar) and isinstance(x, self[...]),
     __subclasscheck__ = __dtype_subclasscheck__
@@ -517,7 +527,7 @@ def __array_getitem__(self, index):
     """
     if not isinstance(index, builtins.tuple): index = (index,)
     base_type = builtins.object
-    base_dtype = scalar
+    base_dtype = None
     base_size = []
     stage = 0
     for arg in index:
@@ -540,12 +550,13 @@ def __array_getitem__(self, index):
     if len(base_size) == 0: base_size = None
     elif len(base_size) == 1 and isinstance(base_size[0], builtins.tuple): base_size = base_size[0]
     size_str = '-' if base_size is None else repr(base_size).strip('(,)')
-    return ArrayType(f"{get_type_name(base_type)}<{base_dtype.__name__}>[{size_str}]", base_type, base_type=base_dtype, base_size=base_size)
+    base_type_str = f"<{base_dtype.__name__}>" if base_dtype is not None else ''
+    return ArrayType(f"{get_type_name(base_type)}{base_type_str}[{size_str}]", base_type, base_type=base_dtype, base_size=base_size)
 
 array = type("array",
     is_iterable = True,
     __getitem__ = __array_getitem__,
-    __subclasshook__ = lambda _, t: isinstance(t, builtins.type) and hasattr(t, 'shape') and hasattr(t, 'dtype')
+    __subclasshook__ = lambda _, t: isinstance(t, builtins.type) and hasattr(t, 'shape')
 )
 
 ### >>> basic element objects <<< ###
